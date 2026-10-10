@@ -72,7 +72,7 @@ function getGridSize(message) {
 
 // Overlay lives in the top-level document, above nested cross-origin frames.
 // pointer-events:none prevents the marker itself from swallowing clicks.
-async function showMarker(target, x, y, index, total) {
+async function showMarker(target, x, y, index, total, clicked = false) {
   const source = `(() => {
     const id = '__coordinate_click_visualizer__';
     let host = document.getElementById(id);
@@ -92,6 +92,23 @@ async function showMarker(target, x, y, index, total) {
     label.textContent = '${index}/${total} (${x},${y})';
     label.style.cssText = 'position:absolute;left:${x + 18}px;top:${y + 13}px;background:#151515;color:#fff;border:1px solid #ff214f;padding:3px 6px;border-radius:4px;white-space:nowrap;font:12px monospace';
     host.replaceChildren(dot,h,v,label);
+    if (${clicked}) {
+      label.textContent = 'Clicked · ' + label.textContent;
+      dot.style.background = '#ff214f';
+      dot.animate([
+        { transform: 'translate(-50%,-50%) scale(.65)' },
+        { transform: 'translate(-50%,-50%) scale(1.2)' },
+        { transform: 'translate(-50%,-50%) scale(1)' }
+      ], { duration: 220, easing: 'ease-out' });
+      const ripple = document.createElement('div');
+      ripple.style.cssText = dot.style.cssText;
+      ripple.style.background = 'transparent';
+      host.append(ripple);
+      ripple.animate([
+        { transform: 'translate(-50%,-50%) scale(1)', opacity: 1 },
+        { transform: 'translate(-50%,-50%) scale(2.5)', opacity: 0 }
+      ], { duration: 320, easing: 'ease-out', fill: 'forwards' });
+    }
     clearTimeout(window.__coordinateClickMarkerTimer);
     window.__coordinateClickMarkerTimer = setTimeout(() => host.remove(), 1600);
   })()`;
@@ -252,6 +269,9 @@ async function clickGrid(
           release,
         );
         completed++;
+        if (visualize) {
+          await showMarker(target, pt.x, pt.y, completed, points.length, true);
+        }
         console.log(`[coordinate-click] ${completed}/${points.length}`, pt);
         if (completed < points.length) await sleep(intervalMs);
       }
