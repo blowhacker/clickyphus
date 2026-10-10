@@ -1,5 +1,3 @@
-// Replace this ID and the matching manifest ID with your main extension's ID.
-const ALLOWED_EXTENSION_ID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const queues = new Map();
 const pickingTabs = new Set();
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -156,22 +154,6 @@ async function clickGrid(tabId, x, y, gridSize = 3, step = 10, intervalMs = 180,
     }
   });
 }
-
-chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
-  if (sender.id !== ALLOWED_EXTENSION_ID) {
-    sendResponse({ ok: false, error: "Unauthorized extension" });
-    return false;
-  }
-  if (message?.type !== "CLICK_AT" && message?.type !== "CLICK_GRID") {
-    sendResponse({ ok: false, error: "Unknown request" });
-    return false;
-  }
-  const gridSize = message.type === "CLICK_AT" ? 1 : getGridSize(message);
-  clickGrid(message.tabId, message.x, message.y, gridSize, message.step ?? 10, message.intervalMs ?? 180, 0, message.visualize !== false)
-    .then(sendResponse)
-    .catch(error => sendResponse({ ok: false, error: error.message }));
-  return true;
-});
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type !== "CLICK_AT" && message?.type !== "CLICK_GRID") return false;

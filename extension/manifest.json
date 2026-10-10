@@ -16,11 +16,6 @@
     "default_title": "Coordinate Click",
     "default_popup": "popup/popup.html"
   },
-  "externally_connectable": {
-    "ids": [
-      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    ]
-  },
   "host_permissions": [
     "<all_urls>"
   ],
