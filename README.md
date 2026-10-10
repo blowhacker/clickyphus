@@ -78,3 +78,16 @@ const result = await chrome.runtime.sendMessage("COMPANION_EXTENSION_ID", {
 multiple times, and navigation or DOM changes may occur mid-sweep. Only use
 on pages where repeated clicks are acceptable. See background.js service worker
 console for per-click logging.
+
+
+## v4 visual click markers
+
+The popup has a **Show click crosshair and coordinates** checkbox (on by default).
+Each attempted click briefly displays a red ring, crosshair and number over the top-level
+page at the requested viewport coordinates. It does not capture the physical OS mouse.
+Markers are click-through (`pointer-events: none`) and display over cross-origin frames.
+A marker shows where input was sent, **not proof that a page action succeeded**.
+For companion calls, supply `visualize: false` to disable it.
+If the target page navigates or blocks overlay creation, the CDP click still runs.
+If measurements came from a screenshot, make sure to account for screenshot
+scaling, device pixel ratio, and browser chrome versus webpage viewport.

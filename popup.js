@@ -11,7 +11,7 @@ document.getElementById("form").addEventListener("submit", async event => {
     const step = Number(document.getElementById("step").value);
     const intervalMs = Number(document.getElementById("interval").value);
     const result = await chrome.runtime.sendMessage({
-      type: "CLICK_GRID", tabId: tab.id, x, y, radius, step, intervalMs
+      type: "CLICK_GRID", tabId: tab.id, x, y, radius, step, intervalMs, visualize: document.getElementById("visualize").checked
     });
     if (!result?.ok) throw new Error(result?.error || "Unknown error");
     window.close();

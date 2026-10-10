@@ -27,7 +27,41 @@ function pointsAround(x, y, radius, step) {
   return points;
 }
 
-async function clickGrid(tabId, x, y, radius = 1, step = 10, intervalMs = 180, startDelayMs = 0) {
+// Overlay lives in the top-level document, above nested cross-origin frames.
+// pointer-events:none prevents the marker itself from swallowing clicks.
+async function showMarker(target, x, y, index, total) {
+  const source = `(() => {
+    const id = '__coordinate_click_visualizer__';
+    let host = document.getElementById(id);
+    if (!host) {
+      host = document.createElement('div');
+      host.id = id;
+      host.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483647;overflow:hidden';
+      (document.documentElement || document.body).appendChild(host);
+    }
+    const dot = document.createElement('div');
+    dot.style.cssText = 'position:absolute;left:${x}px;top:${y}px;transform:translate(-50%,-50%);width:24px;height:24px;border:3px solid #ff214f;border-radius:50%;background:rgba(255,33,79,.22);box-shadow:0 0 0 2px white,0 0 12px #ff214f;box-sizing:border-box';
+    const h = document.createElement('div');
+    h.style.cssText = 'position:absolute;left:${x-16}px;top:${y}px;width:32px;border-top:1px solid #ff214f';
+    const v = document.createElement('div');
+    v.style.cssText = 'position:absolute;left:${x}px;top:${y-16}px;height:32px;border-left:1px solid #ff214f';
+    const label = document.createElement('div');
+    label.textContent = '${index}/${total} (${x},${y})';
+    label.style.cssText = 'position:absolute;left:${x+18}px;top:${y+13}px;background:#151515;color:#fff;border:1px solid #ff214f;padding:3px 6px;border-radius:4px;white-space:nowrap;font:12px monospace';
+    host.replaceChildren(dot,h,v,label);
+    clearTimeout(window.__coordinateClickMarkerTimer);
+    window.__coordinateClickMarkerTimer = setTimeout(() => host.remove(), 1600);
+  })()`;
+  try {
+    await chrome.debugger.sendCommand(target, 'Runtime.evaluate', {
+      expression: source, returnByValue: true
+    });
+  } catch (error) {
+    console.warn('[coordinate-click] overlay unavailable:', error.message);
+  }
+}
+
+async function clickGrid(tabId, x, y, radius = 1, step = 10, intervalMs = 180, startDelayMs = 0, visualize = true) {
   if (!Number.isInteger(tabId) || tabId < 0 ||
       !Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 ||
       !Number.isInteger(radius) || radius < 0 || radius > 4 ||
@@ -45,6 +79,10 @@ async function clickGrid(tabId, x, y, radius = 1, step = 10, intervalMs = 180, s
     let completed = 0;
     try {
       for (const pt of points) {
+        if (visualize) {
+          await showMarker(target, pt.x, pt.y, completed + 1, points.length);
+          await sleep(120); // Let the crosshair become visible before clicking
+        }
         const move = { type: "mouseMoved", x: pt.x, y: pt.y };
         const press = { type: "mousePressed", x: pt.x, y: pt.y, button: "left", buttons: 1, clickCount: 1 };
         const release = { type: "mouseReleased", x: pt.x, y: pt.y, button: "left", buttons: 0, clickCount: 1 };
@@ -77,7 +115,7 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
     return false;
   }
   const radius = message.type === "CLICK_AT" ? 0 : (message.radius ?? 1);
-  clickGrid(message.tabId, message.x, message.y, radius, message.step ?? 10, message.intervalMs ?? 180)
+  clickGrid(message.tabId, message.x, message.y, radius, message.step ?? 10, message.intervalMs ?? 180, 0, message.visualize !== false)
     .then(sendResponse)
     .catch(error => sendResponse({ ok: false, error: error.message }));
   return true;
@@ -88,7 +126,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   sendResponse({ ok: true, queued: true });
   const radius = message.type === "CLICK_AT" ? 0 : (message.radius ?? 1);
   // Give the popup time to close, then start the sweep.
-  clickGrid(message.tabId, message.x, message.y, radius, message.step ?? 10, message.intervalMs ?? 180, 600)
+  clickGrid(message.tabId, message.x, message.y, radius, message.step ?? 10, message.intervalMs ?? 180, 600, message.visualize !== false)
     .then(result => console.log("[coordinate-click] popup sweep completed", result))
     .catch(error => console.error("[coordinate-click] popup sweep failed", error));
   return false;
