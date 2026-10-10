@@ -1,6 +1,7 @@
 // Replace this ID and the matching manifest ID with your main extension's ID.
 const ALLOWED_EXTENSION_ID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const queues = new Map();
+const pickingTabs = new Set();
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 function runSerially(tabId, task) {
@@ -17,7 +18,7 @@ async function isFocusedTab(tabId) {
   try {
     const tab = await chrome.tabs.get(tabId);
     const window = await chrome.windows.get(tab.windowId);
-    return tab.active && window.focused;
+    return tab.active && window.focused && !pickingTabs.has(tabId);
   } catch { return false; }
 }
 
@@ -239,3 +240,49 @@ chrome.runtime.onMessage.addListener((message, sender) => {
   })().catch(error => console.warn('[coordinate-click] rule check failed', error));
   return false;
 });
+
+// Coordinate picking is handled outside the popup so it survives popup closure.
+chrome.runtime.onMessage.addListener((message, sender, respond) => {
+  if (message?.type === 'PICK_POINT') {
+    (async () => {
+      // The toolbar popup may own focus. Resolve its underlying normal window
+      // rather than applying the stricter click-execution focus guard here.
+      const browserWindow = await chrome.windows.getLastFocused({windowTypes:['normal']});
+      const tab = await chrome.tabs.get(message.tabId);
+      if (!tab.active || tab.windowId !== browserWindow.id) {
+        throw new Error('The target tab changed. Reopen the extension on the page you want to pick.');
+      }
+      pickingTabs.add(message.tabId);
+      try {
+        const result = await chrome.tabs.sendMessage(message.tabId, {type:'START_POINT_PICKER'}, {frameId:0});
+        if (!result?.ok) throw new Error('Picker unavailable.');
+        respond({ok:true});
+      } catch {
+        pickingTabs.delete(message.tabId);
+        respond({ok:false,error:'Refresh the page and try again. Chrome internal pages cannot be picked.'});
+      }
+    })().catch(error => respond({ok:false,error:error.message}));
+    return true;
+  }
+  if (message?.type === 'POINT_PICKER_DONE') {
+    (async () => {
+      const tabId = sender.tab?.id;
+      if (sender.frameId !== 0 || !pickingTabs.has(tabId)) return;
+      pickingTabs.delete(tabId);
+      const point = message.point;
+      if (!point || !Number.isInteger(point.x) || !Number.isInteger(point.y) || point.x < 0 || point.y < 0) return;
+      const {manualDraft} = await chrome.storage.local.get('manualDraft');
+      if (manualDraft?.tabId !== tabId) return;
+      await chrome.storage.local.set({manualDraft:{...manualDraft,...point,picked:true}});
+      if (await isFocusedTab(tabId)) {
+        try { await chrome.action.openPopup(); }
+        catch { /* Coordinates remain available when the user reopens the popup. */ }
+      }
+    })().catch(error => console.warn('[coordinate-click] picker failed', error));
+  }
+  return false;
+});
+chrome.tabs.onUpdated.addListener((tabId, change) => {
+  if (change.status === 'loading') pickingTabs.delete(tabId);
+});
+chrome.tabs.onRemoved.addListener(tabId => pickingTabs.delete(tabId));

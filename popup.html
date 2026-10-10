@@ -34,6 +34,7 @@
     button.primary:hover { background: #a0f1d3; border-color: #a0f1d3; }
     .remove { background: transparent; border-color: transparent; color: #ed9eaa; font-size: 10px; padding: 5px 7px; }
     .remove:hover { background: #35232a; border-color: #65404a; }
+    #pick-position { width: 100%; margin: 12px 0 2px; padding: 10px; }
     .line { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .bar { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
     .hint { color: var(--muted); font-size: 11px; font-weight: 400; }
@@ -91,6 +92,8 @@
     <summary>Test a click or grid sweep</summary>
     <p class="hint">Runs on the active tab. X and Y are viewport pixels.</p>
     <form id="manual">
+      <button id="pick-position" type="button">⌖ Pick on page</button>
+      <p class="hint">Click a point to fill X / Y. Escape cancels.</p>
       <div class="line"><label>X position<input name="x" type="number" min="0" value="295" required></label><label>Y
           position<input name="y" type="number" min="0" value="355" required></label></div>
       <label>Grid size<select name="gridSize" class="sizes"></select></label>

@@ -8,6 +8,8 @@ A Chrome Manifest V3 unpacked extension for browser-level coordinate clicks usin
 2. In Chrome, open `chrome://extensions`, enable Developer mode, choose **Load unpacked** and select the extracted folder.
 3. Click the toolbar icon to run manual sweeps or add automatic rules.
 
+For manual tests, expand **Test a click or grid sweep** and choose **Pick on page**. Click a point on the crosshair overlay to capture its viewport X/Y coordinates without activating the underlying control. The popup reopens with the selected point and your test settings; if it does not reopen automatically, click the extension icon. Escape cancels. Picking also cancels when you switch tabs or after 60 seconds. Automatic clicks pause during picking. Refresh existing pages after reloading the extension to load the picker script.
+
 ## What's new in v7
 
 **Automatic grid sweeps stop when the matching text disappears.** Before each click (and again after the visual crosshair delay), the extension asks the same frame/document that triggered the rule whether it still contains the configured phrase. It stops if the phrase is missing, the frame is gone, or the tab navigates. Already dispatched clicks cannot be undone. The automatic rule still fires at most once per page load, even if stopped early. All sweeps require the active tab in the focused Chrome window and stop when it loses focus. Manual sweeps do not check page text.

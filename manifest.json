@@ -30,6 +30,7 @@
         "<all_urls>"
       ],
       "js": [
+        "picker.js",
         "watcher.js"
       ],
       "all_frames": true,

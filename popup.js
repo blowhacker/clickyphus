@@ -1,5 +1,10 @@
 const $ = (sel, root=document) => root.querySelector(sel);
 const store = $('#rules');
+async function getTargetTab() {
+  const browserWindow = await chrome.windows.getLastFocused({windowTypes:['normal']});
+  const [tab] = await chrome.tabs.query({active:true,windowId:browserWindow.id});
+  return tab;
+}
 const values = [1,3,5,7,9,11,13,15,17,19,20];
 function populateSizes(select, value=13) {
   for (const size of values) {
@@ -76,7 +81,7 @@ $('#manual').addEventListener('submit', async e => {
   const form = e.currentTarget;
   const get = name => form.elements.namedItem(name);
   try {
-  const [tab] = await chrome.tabs.query({active:true,currentWindow:true});
+  const tab = await getTargetTab();
   if (!tab?.id) { $('#status').dataset.tone = 'error'; $('#status').textContent='No active tab found.'; return; }
   const message = {
     type:'CLICK_GRID',tabId:tab.id,x:Number(get('x').value),y:Number(get('y').value),
@@ -93,4 +98,45 @@ $('#manual').addEventListener('submit', async e => {
     $('#status').dataset.tone = 'error';
     $('#status').textContent = `Could not run clicks: ${error.message}`;
   }
+});
+
+// The popup closes while picking; retain the test setup for this tab.
+const manualFields = ['x', 'y', 'gridSize', 'step', 'intervalMs', 'visualize'];
+const manualReady = (async () => {
+  const tab = await getTargetTab();
+  const {manualDraft} = await chrome.storage.local.get('manualDraft');
+  if (!manualDraft || manualDraft.tabId !== tab?.id) return;
+  for (const name of manualFields) {
+    const field = $('#manual').elements.namedItem(name);
+    if (manualDraft[name] === undefined) continue;
+    if (field.type === 'checkbox') field.checked = manualDraft[name];
+    else field.value = manualDraft[name];
+  }
+  if (manualDraft.picked) {
+    $('.panel').open = true;
+    $('#status').dataset.tone = 'success';
+    $('#status').textContent = `Position picked: X ${manualDraft.x}, Y ${manualDraft.y}. Ready to test.`;
+  }
+})().catch(() => {});
+$('#pick-position').addEventListener('click', async () => {
+  const button = $('#pick-position');
+  button.disabled = true;
+  try {
+    await manualReady;
+    const tab = await getTargetTab();
+    if (!tab?.id) throw new Error('No active tab found.');
+    const draft = {tabId:tab.id, picked:false};
+    for (const name of manualFields) {
+      const field = $('#manual').elements.namedItem(name);
+      draft[name] = field.type === 'checkbox' ? field.checked : field.value;
+    }
+    await chrome.storage.local.set({manualDraft:draft});
+    const result = await chrome.runtime.sendMessage({type:'PICK_POINT', tabId:tab.id});
+    if (!result?.ok) throw new Error(result?.error || 'Picker unavailable.');
+    window.close();
+  } catch (error) {
+    $('#status').dataset.tone = 'error';
+    $('#status').textContent = `Could not pick a position: ${error.message}`;
+    $('.panel').open = true;
+  } finally { button.disabled = false; }
 });
