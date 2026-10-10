@@ -1,24 +1,37 @@
-# Coordinate Click Companion v0.5
+# Coordinate Click Companion v6
 
-An unpacked Chrome Manifest V3 extension for manual or automatic viewport-coordinate clicks using CDP (`chrome.debugger`).
+A Chrome Manifest V3 unpacked extension for browser-level coordinate clicks using `chrome.debugger` / `Input.dispatchMouseEvent`.
 
-## Install
-1. Unzip. Go to `chrome://extensions`, turn on Developer mode, and choose **Load unpacked**.
-2. Select the `coordinate-click-companion-v5` directory.
-3. Open the toolbar popup. The top form runs manual clicks; the lower form saves an automatic rule.
+## Installation
 
-## Auto rule
-Set **Page URL contains** (substring of the *top-level tab URL*) and **Page text contains** (case-insensitive substring found in any permitted frame). Configure X/Y (viewport coordinates), grid size, step and delay; enable the rule and save.
+1. Unzip the archive.
+2. In Chrome, open `chrome://extensions`, enable Developer mode, choose **Load unpacked** and select the extracted folder.
+3. Click the toolbar icon to run manual sweeps or add automatic rules.
 
-When both conditions match, the grid fires **once per tab page load**. Reloading the page rearms the rule. Turning the rule off prevents future automatic sweeps. A matched cross-origin frame can report its text because its own extension content script scans it; the background service worker performs the actual CDP click in the tab viewport. For best results use a distinctive URL and text phrase.
+## What's new
 
-## Permissions/privacy
-`debugger` dispatches input; `storage` persists the rule; `tabs` reads the top-level URL. Broad `<all_urls>` host access injects a page text watcher into webpages, including cross-origin frames where permitted. Text stays in the page; the watcher sends only the configured search phrase and match signal. Restricted Chrome pages and some sandboxed frames are excluded. Open shadow roots are scanned, closed roots are not. Embedded cross-origin content may require matching host access; not every special frame is injectable.
+- Grid sizes through **20 × 20 (400 clicks)** with 10px default spacing.
+- Multiple saved automatic rules, each matching **both** a top-level tab URL substring and page text substring.
+- Per-rule coordinates, grid size, spacing, delay, enable/disable, and visual markers.
+- Fires each matching rule once per tab page load. Each tab's click jobs run sequentially.
+- Migrates the previous `autoRule` setting when `autoRules` has not yet been saved.
 
-**Important:** Auto clicks can trigger actions multiple times (9/25/49 clicks) and can interact with sensitive controls. Start with single click or a safe test page. Disabling auto rule stops new automatic sweeps, but not one already in progress. CDP doesn't move the OS cursor; the optional visual marker displays click coordinates.
+Even-sized grids have no single centre cell; the supplied coordinate is between the middle four positions. Grid points are visited nearest-centre-first.
 
-## Companion API
-Change placeholder main extension ID in `manifest.json` and `background.js`, reload, then send `CLICK_GRID` or `CLICK_AT` requests as before.
+## Companion extension API
 
-## Debugging
-`chrome://extensions` → Service worker → Inspect. Filter console for `[coordinate-click] AUTO RULE MATCHED` / `AUTO SWEEP DONE`.
+Update the placeholder main extension ID in `manifest.json` and `background.js` before using external messages.
+
+```js
+await chrome.runtime.sendMessage('COMPANION_EXTENSION_ID', {
+  type: 'CLICK_GRID', tabId: tab.id,
+  x: 623, y: 400, gridSize: 20, step: 10, intervalMs: 180,
+  visualize: true
+});
+```
+
+The previous `radius` parameter remains accepted for compatibility.
+
+## Cautions
+
+400 clicks can activate controls repeatedly; ensure the sweep area is safe. Chrome may display debugger warnings. DOM text detection works in permitted frames and open shadow roots, not closed shadow roots. Clicking does not move the physical OS cursor. The top-level URL condition is a case-insensitive substring match. The extension must have host permission for inspected pages.
