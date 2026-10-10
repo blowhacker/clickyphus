@@ -68,7 +68,7 @@ async function showMarker(target, x, y, index, total) {
   }
 }
 
-async function clickGrid(tabId, x, y, gridSize = 3, step = 10, intervalMs = 180, startDelayMs = 0, visualize = true) {
+async function clickGrid(tabId, x, y, gridSize = 3, step = 10, intervalMs = 180, startDelayMs = 0, visualize = true, shouldContinue = null) {
   if (!Number.isInteger(tabId) || tabId < 0 ||
       !Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 ||
       !Number.isInteger(gridSize) || gridSize < 1 || gridSize > 20 ||
@@ -86,9 +86,21 @@ async function clickGrid(tabId, x, y, gridSize = 3, step = 10, intervalMs = 180,
     let completed = 0;
     try {
       for (const pt of points) {
+        // Automatic jobs check the original text before every individual click.
+        // Manual jobs have no guard and behave exactly as before.
+        if (shouldContinue && !(await shouldContinue())) {
+          console.log('[coordinate-click] AUTO STOP: matching text disappeared or frame unavailable',
+            {tabId, completed, total: points.length});
+          return {ok: true, stopped: true, reason: 'text_missing', tabId, completed, total: points.length};
+        }
         if (visualize) {
           await showMarker(target, pt.x, pt.y, completed + 1, points.length);
           await sleep(120); // Let the crosshair become visible before clicking
+        }
+        // The page can change while the marker is shown; check again.
+        if (shouldContinue && !(await shouldContinue())) {
+          console.log('[coordinate-click] AUTO STOP before mouse press', {tabId, completed});
+          return {ok: true, stopped: true, reason: 'text_missing', tabId, completed, total: points.length};
         }
         const move = { type: "mouseMoved", x: pt.x, y: pt.y };
         const press = { type: "mousePressed", x: pt.x, y: pt.y, button: "left", buttons: 1, clickCount: 1 };
@@ -164,10 +176,29 @@ chrome.runtime.onMessage.addListener((message, sender) => {
       if (!fired) { fired = new Set(); autoFired.set(tabId, fired); }
       if (fired.has(rule.id)) continue;
       fired.add(rule.id);
-      console.log('[coordinate-click] AUTO MATCH', {tabId, ruleId: rule.id, url: tab.url});
+      const frameId = sender.frameId ?? 0;
+      const documentId = sender.documentId;
+      const expectedUrl = tab.url;
+      const needle = rule.textMatch.trim().toLowerCase();
+      // Bind the guard to the document that originally matched. If it navigates,
+      // disappears, or stops containing the phrase, treat that as a stop signal.
+      const shouldContinue = async () => {
+        try {
+          const currentTab = await chrome.tabs.get(tabId);
+          if (currentTab.url !== expectedUrl) return false;
+          const options = documentId ? {documentId} : {frameId};
+          const response = await chrome.tabs.sendMessage(tabId,
+            {type: 'CHECK_TEXT_PRESENT', textMatch: needle}, options);
+          return response?.present === true;
+        } catch (err) {
+          console.log('[coordinate-click] text recheck failed; stopping', err.message);
+          return false;
+        }
+      };
+      console.log('[coordinate-click] AUTO MATCH', {tabId, ruleId: rule.id, frameId, url: tab.url});
       clickGrid(tabId, rule.x, rule.y, rule.gridSize ?? (rule.radius*2+1),
-        rule.step, rule.intervalMs, 0, rule.visualize)
-        .then(result => console.log('[coordinate-click] AUTO COMPLETED', rule.id, result.completed))
+        rule.step, rule.intervalMs, 0, rule.visualize, shouldContinue)
+        .then(result => console.log('[coordinate-click] AUTO FINISHED', rule.id, result))
         .catch(error => console.error('[coordinate-click] AUTO FAILED', rule.id, error));
     }
   })().catch(error => console.warn('[coordinate-click] rule check failed', error));

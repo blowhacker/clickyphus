@@ -1,4 +1,4 @@
-# Coordinate Click Companion v6
+# Coordinate Click Companion v7
 
 A Chrome Manifest V3 unpacked extension for browser-level coordinate clicks using `chrome.debugger` / `Input.dispatchMouseEvent`.
 
@@ -8,7 +8,11 @@ A Chrome Manifest V3 unpacked extension for browser-level coordinate clicks usin
 2. In Chrome, open `chrome://extensions`, enable Developer mode, choose **Load unpacked** and select the extracted folder.
 3. Click the toolbar icon to run manual sweeps or add automatic rules.
 
-## What's new
+## What's new in v7
+
+**Automatic grid sweeps stop when the matching text disappears.** Before each click (and again after the visual crosshair delay), the extension asks the same frame/document that triggered the rule whether it still contains the configured phrase. It stops if the phrase is missing, the frame is gone, or the tab navigates. Already dispatched clicks cannot be undone. The automatic rule still fires at most once per page load, even if stopped early. Manual sweeps remain unconditional.
+
+## Features
 
 - Grid sizes through **20 × 20 (400 clicks)** with 10px default spacing.
 - Multiple saved automatic rules, each matching **both** a top-level tab URL substring and page text substring.
