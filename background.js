@@ -13,6 +13,29 @@ function runSerially(tabId, task) {
   return current;
 }
 
+async function isFocusedTab(tabId) {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    const window = await chrome.windows.get(tab.windowId);
+    return tab.active && window.focused;
+  } catch { return false; }
+}
+
+// Content scripts recheck live text in every accessible frame on focus.
+async function recheckFocusedTab(tabId) {
+  if (!(await isFocusedTab(tabId))) return;
+  try { await chrome.tabs.sendMessage(tabId, {type: 'RECHECK_AUTO_RULES'}); }
+  catch { /* Restricted pages or content scripts that have not loaded yet. */ }
+}
+chrome.tabs.onActivated.addListener(({tabId}) => { recheckFocusedTab(tabId); });
+chrome.windows.onFocusChanged.addListener(async windowId => {
+  if (windowId === chrome.windows.WINDOW_ID_NONE) return;
+  try {
+    const [tab] = await chrome.tabs.query({active: true, windowId});
+    if (tab?.id != null) await recheckFocusedTab(tab.id);
+  } catch { /* Window may have closed. */ }
+});
+
 function pointsAround(x, y, gridSize, step) {
   // For even sizes, the requested point lies between the four central cells.
   // Round resulting coordinates to browser CSS pixels.
@@ -79,6 +102,9 @@ async function clickGrid(tabId, x, y, gridSize = 3, step = 10, intervalMs = 180,
 
   return runSerially(tabId, async () => {
     if (startDelayMs) await sleep(startDelayMs);
+    if (!(await isFocusedTab(tabId))) {
+      return {ok: true, stopped: true, reason: 'tab_inactive', tabId, completed: 0};
+    }
     const target = { tabId };
     const points = pointsAround(x, y, gridSize, step);
     console.log("[coordinate-click] attaching for sweep", { tabId, x, y, gridSize, step, count: points.length });
@@ -86,6 +112,9 @@ async function clickGrid(tabId, x, y, gridSize = 3, step = 10, intervalMs = 180,
     let completed = 0;
     try {
       for (const pt of points) {
+        if (!(await isFocusedTab(tabId))) {
+          return {ok: true, stopped: true, reason: 'tab_inactive', tabId, completed, total: points.length};
+        }
         // Automatic jobs check the original text before every individual click.
         // Manual jobs have no guard and behave exactly as before.
         if (shouldContinue && !(await shouldContinue())) {
@@ -101,6 +130,9 @@ async function clickGrid(tabId, x, y, gridSize = 3, step = 10, intervalMs = 180,
         if (shouldContinue && !(await shouldContinue())) {
           console.log('[coordinate-click] AUTO STOP before mouse press', {tabId, completed});
           return {ok: true, stopped: true, reason: 'text_missing', tabId, completed, total: points.length};
+        }
+        if (!(await isFocusedTab(tabId))) {
+          return {ok: true, stopped: true, reason: 'tab_inactive', tabId, completed, total: points.length};
         }
         const move = { type: "mouseMoved", x: pt.x, y: pt.y };
         const press = { type: "mousePressed", x: pt.x, y: pt.y, button: "left", buttons: 1, clickCount: 1 };
@@ -163,7 +195,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
   if (message?.type !== 'AUTO_TEXT_FOUND') return false;
   (async () => {
     const tabId = sender.tab?.id;
-    if (!Number.isInteger(tabId)) return;
+    if (!Number.isInteger(tabId) || !(await isFocusedTab(tabId))) return;
     const { autoRules = [] } = await chrome.storage.local.get('autoRules');
     const tab = await chrome.tabs.get(tabId);
     if (!tab.url) return;
@@ -198,7 +230,10 @@ chrome.runtime.onMessage.addListener((message, sender) => {
       console.log('[coordinate-click] AUTO MATCH', {tabId, ruleId: rule.id, frameId, url: tab.url});
       clickGrid(tabId, rule.x, rule.y, rule.gridSize ?? (rule.radius*2+1),
         rule.step, rule.intervalMs, 0, rule.visualize, shouldContinue)
-        .then(result => console.log('[coordinate-click] AUTO FINISHED', rule.id, result))
+        .then(result => {
+          if (result.stopped && result.completed === 0 && autoFired.get(tabId) === fired) fired.delete(rule.id);
+          console.log('[coordinate-click] AUTO FINISHED', rule.id, result);
+        })
         .catch(error => console.error('[coordinate-click] AUTO FAILED', rule.id, error));
     }
   })().catch(error => console.warn('[coordinate-click] rule check failed', error));

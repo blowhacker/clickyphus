@@ -10,14 +10,15 @@ A Chrome Manifest V3 unpacked extension for browser-level coordinate clicks usin
 
 ## What's new in v7
 
-**Automatic grid sweeps stop when the matching text disappears.** Before each click (and again after the visual crosshair delay), the extension asks the same frame/document that triggered the rule whether it still contains the configured phrase. It stops if the phrase is missing, the frame is gone, or the tab navigates. Already dispatched clicks cannot be undone. The automatic rule still fires at most once per page load, even if stopped early. Manual sweeps remain unconditional.
+**Automatic grid sweeps stop when the matching text disappears.** Before each click (and again after the visual crosshair delay), the extension asks the same frame/document that triggered the rule whether it still contains the configured phrase. It stops if the phrase is missing, the frame is gone, or the tab navigates. Already dispatched clicks cannot be undone. The automatic rule still fires at most once per page load, even if stopped early. All sweeps require the active tab in the focused Chrome window and stop when it loses focus. Manual sweeps do not check page text.
 
 ## Features
 
 - Grid sizes through **20 × 20 (400 clicks)** with 10px default spacing.
 - Multiple saved automatic rules, each matching **both** a top-level tab URL substring and page text substring.
 - Per-rule coordinates, grid size, spacing, delay, enable/disable, and visual markers.
-- Fires each matching rule once per tab page load. Each tab's click jobs run sequentially.
+- Runs only on the active tab in the focused Chrome window. Switching tabs or focusing a Chrome window rechecks automatic conditions in accessible frames.
+- Fires each matching rule once per tab page load. A rule that has already clicked does not fire again on refocus. Each tab's click jobs run sequentially.
 - Migrates the previous `autoRule` setting when `autoRules` has not yet been saved.
 
 Even-sized grids have no single centre cell; the supplied coordinate is between the middle four positions. Grid points are visited nearest-centre-first.

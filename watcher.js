@@ -23,6 +23,12 @@
   // Background worker checks this before each click. Always scan the live DOM,
   // rather than trusting the one-time AUTO_TEXT_FOUND notification.
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.type === 'RECHECK_AUTO_RULES') {
+      reported.clear();
+      scan();
+      sendResponse({ok: true});
+      return false;
+    }
     if (message?.type !== 'CHECK_TEXT_PRESENT') return false;
     const needle = message.textMatch?.trim().toLowerCase();
     sendResponse({present: !!needle && containsText(document.body || document.documentElement, needle)});
