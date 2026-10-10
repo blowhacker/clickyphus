@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Coordinate Click Companion",
+  "version": "0.1.0",
+  "description": "Clicks viewport coordinates using Chrome DevTools Protocol.",
+  "permissions": ["debugger", "activeTab"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Coordinate Click", "default_popup": "popup.html" },
+  "externally_connectable": {
+    "ids": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
+  }
+}

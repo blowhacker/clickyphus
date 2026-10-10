@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Coordinate Click</title>
+  <style>
+    body { width: 220px; padding: 14px; font: 13px system-ui, sans-serif; }
+    label { display: block; margin: 8px 0; }
+    input { width: 100%; box-sizing: border-box; padding: 6px; }
+    button { margin-top: 8px; width: 100%; padding: 8px; }
+    #status { white-space: pre-wrap; overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+  <strong>Click viewport coordinates</strong>
+  <form id="form">
+    <label>X <input id="x" type="number" value="190" min="0" step="any" required></label>
+    <label>Y <input id="y" type="number" value="417" min="0" step="any" required></label>
+    <button type="submit">Click</button>
+  </form>
+  <p id="status" role="status"></p>
+  <script src="popup.js"></script>
+</body>
+</html>
