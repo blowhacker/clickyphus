@@ -33,7 +33,7 @@
         checkbox.setAttribute('aria-label', 'Enable rule');
         summary.append(label);
         // Clicking the checkbox should not also expand/collapse the row.
-        label.addEventListener('click', e => e.stopPropagation());
+        label.addEventListener('click', (e) => e.stopPropagation());
       }
     }
 
@@ -43,7 +43,8 @@
     rule.append(details);
 
     const update = () => {
-      const get = name => rule.querySelector(`[name="${name}"]`)?.value?.trim() || '';
+      const get = (name) =>
+        rule.querySelector(`[name="${name}"]`)?.value?.trim() || '';
       const url = get('urlMatch') || '(set URL)';
       const phrase = get('textMatch') || '(set text)';
       const size = get('gridSize') || '?';
@@ -59,7 +60,9 @@
     update();
   }
 
-  function sync() { container.querySelectorAll('.rule').forEach(compact); }
+  function sync() {
+    container.querySelectorAll('.rule').forEach(compact);
+  }
   const observer = new MutationObserver(sync);
   observer.observe(container, { childList: true });
   sync();

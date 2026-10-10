@@ -1,14 +1,16 @@
 const queues = new Map();
 const pickingTabs = new Set();
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function runSerially(tabId, task) {
   const prior = queues.get(tabId) || Promise.resolve();
   const current = prior.catch(() => {}).then(task);
   queues.set(tabId, current);
-  current.finally(() => {
-    if (queues.get(tabId) === current) queues.delete(tabId);
-  }).catch(() => {});
+  current
+    .finally(() => {
+      if (queues.get(tabId) === current) queues.delete(tabId);
+    })
+    .catch(() => {});
   return current;
 }
 
@@ -17,22 +19,31 @@ async function isFocusedTab(tabId) {
     const tab = await chrome.tabs.get(tabId);
     const window = await chrome.windows.get(tab.windowId);
     return tab.active && window.focused && !pickingTabs.has(tabId);
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
 // Content scripts recheck live text in every accessible frame on focus.
 async function recheckFocusedTab(tabId) {
   if (!(await isFocusedTab(tabId))) return;
-  try { await chrome.tabs.sendMessage(tabId, {type: 'RECHECK_AUTO_RULES'}); }
-  catch { /* Restricted pages or content scripts that have not loaded yet. */ }
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: 'RECHECK_AUTO_RULES' });
+  } catch {
+    /* Restricted pages or content scripts that have not loaded yet. */
+  }
 }
-chrome.tabs.onActivated.addListener(({tabId}) => { recheckFocusedTab(tabId); });
-chrome.windows.onFocusChanged.addListener(async windowId => {
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+  recheckFocusedTab(tabId);
+});
+chrome.windows.onFocusChanged.addListener(async (windowId) => {
   if (windowId === chrome.windows.WINDOW_ID_NONE) return;
   try {
-    const [tab] = await chrome.tabs.query({active: true, windowId});
+    const [tab] = await chrome.tabs.query({ active: true, windowId });
     if (tab?.id != null) await recheckFocusedTab(tab.id);
-  } catch { /* Window may have closed. */ }
+  } catch {
+    /* Window may have closed. */
+  }
 });
 
 function pointsAround(x, y, gridSize, step) {
@@ -44,16 +55,19 @@ function pointsAround(x, y, gridSize, step) {
     for (let ix = 0; ix < gridSize; ix++) {
       const px = Math.round(x + (start + ix) * step);
       const py = Math.round(y + (start + iy) * step);
-      if (px >= 0 && py >= 0) points.push({x:px, y:py});
+      if (px >= 0 && py >= 0) points.push({ x: px, y: py });
     }
   }
   // Click nearest the requested point first, and expand outward.
-  points.sort((a,b) => (a.x-x)**2+(a.y-y)**2 - ((b.x-x)**2+(b.y-y)**2));
+  points.sort(
+    (a, b) =>
+      (a.x - x) ** 2 + (a.y - y) ** 2 - ((b.x - x) ** 2 + (b.y - y) ** 2),
+  );
   return points;
 }
 
 function getGridSize(message) {
-  return message.gridSize ?? ((message.radius ?? 1) * 2 + 1);
+  return message.gridSize ?? (message.radius ?? 1) * 2 + 1;
 }
 
 // Overlay lives in the top-level document, above nested cross-origin frames.
@@ -71,55 +85,109 @@ async function showMarker(target, x, y, index, total) {
     const dot = document.createElement('div');
     dot.style.cssText = 'position:absolute;left:${x}px;top:${y}px;transform:translate(-50%,-50%);width:24px;height:24px;border:3px solid #ff214f;border-radius:50%;background:rgba(255,33,79,.22);box-shadow:0 0 0 2px white,0 0 12px #ff214f;box-sizing:border-box';
     const h = document.createElement('div');
-    h.style.cssText = 'position:absolute;left:${x-16}px;top:${y}px;width:32px;border-top:1px solid #ff214f';
+    h.style.cssText = 'position:absolute;left:${x - 16}px;top:${y}px;width:32px;border-top:1px solid #ff214f';
     const v = document.createElement('div');
-    v.style.cssText = 'position:absolute;left:${x}px;top:${y-16}px;height:32px;border-left:1px solid #ff214f';
+    v.style.cssText = 'position:absolute;left:${x}px;top:${y - 16}px;height:32px;border-left:1px solid #ff214f';
     const label = document.createElement('div');
     label.textContent = '${index}/${total} (${x},${y})';
-    label.style.cssText = 'position:absolute;left:${x+18}px;top:${y+13}px;background:#151515;color:#fff;border:1px solid #ff214f;padding:3px 6px;border-radius:4px;white-space:nowrap;font:12px monospace';
+    label.style.cssText = 'position:absolute;left:${x + 18}px;top:${y + 13}px;background:#151515;color:#fff;border:1px solid #ff214f;padding:3px 6px;border-radius:4px;white-space:nowrap;font:12px monospace';
     host.replaceChildren(dot,h,v,label);
     clearTimeout(window.__coordinateClickMarkerTimer);
     window.__coordinateClickMarkerTimer = setTimeout(() => host.remove(), 1600);
   })()`;
   try {
     await chrome.debugger.sendCommand(target, 'Runtime.evaluate', {
-      expression: source, returnByValue: true
+      expression: source,
+      returnByValue: true,
     });
   } catch (error) {
     console.warn('[coordinate-click] overlay unavailable:', error.message);
   }
 }
 
-async function clickGrid(tabId, x, y, gridSize = 3, step = 10, intervalMs = 180, startDelayMs = 0, visualize = true, shouldContinue = null) {
-  if (!Number.isInteger(tabId) || tabId < 0 ||
-      !Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 ||
-      !Number.isInteger(gridSize) || gridSize < 1 || gridSize > 20 ||
-      !Number.isInteger(step) || step < 1 || step > 100 ||
-      !Number.isInteger(intervalMs) || intervalMs < 80 || intervalMs > 5000) {
-    throw new Error("Invalid tab, coordinates, grid size (1–20), step (1–100), or interval (80–5000ms)");
+async function clickGrid(
+  tabId,
+  x,
+  y,
+  gridSize = 3,
+  step = 10,
+  intervalMs = 180,
+  startDelayMs = 0,
+  visualize = true,
+  shouldContinue = null,
+) {
+  if (
+    !Number.isInteger(tabId) ||
+    tabId < 0 ||
+    !Number.isFinite(x) ||
+    !Number.isFinite(y) ||
+    x < 0 ||
+    y < 0 ||
+    !Number.isInteger(gridSize) ||
+    gridSize < 1 ||
+    gridSize > 20 ||
+    !Number.isInteger(step) ||
+    step < 1 ||
+    step > 100 ||
+    !Number.isInteger(intervalMs) ||
+    intervalMs < 80 ||
+    intervalMs > 5000
+  ) {
+    throw new Error(
+      'Invalid tab, coordinates, grid size (1–20), step (1–100), or interval (80–5000ms)',
+    );
   }
 
   return runSerially(tabId, async () => {
     if (startDelayMs) await sleep(startDelayMs);
     if (!(await isFocusedTab(tabId))) {
-      return {ok: true, stopped: true, reason: 'tab_inactive', tabId, completed: 0};
+      return {
+        ok: true,
+        stopped: true,
+        reason: 'tab_inactive',
+        tabId,
+        completed: 0,
+      };
     }
     const target = { tabId };
     const points = pointsAround(x, y, gridSize, step);
-    console.log("[coordinate-click] attaching for sweep", { tabId, x, y, gridSize, step, count: points.length });
-    await chrome.debugger.attach(target, "1.3");
+    console.log('[coordinate-click] attaching for sweep', {
+      tabId,
+      x,
+      y,
+      gridSize,
+      step,
+      count: points.length,
+    });
+    await chrome.debugger.attach(target, '1.3');
     let completed = 0;
     try {
       for (const pt of points) {
         if (!(await isFocusedTab(tabId))) {
-          return {ok: true, stopped: true, reason: 'tab_inactive', tabId, completed, total: points.length};
+          return {
+            ok: true,
+            stopped: true,
+            reason: 'tab_inactive',
+            tabId,
+            completed,
+            total: points.length,
+          };
         }
         // Automatic jobs check the original text before every individual click.
         // Manual jobs have no guard and behave exactly as before.
         if (shouldContinue && !(await shouldContinue())) {
-          console.log('[coordinate-click] AUTO STOP: matching text disappeared or frame unavailable',
-            {tabId, completed, total: points.length});
-          return {ok: true, stopped: true, reason: 'text_missing', tabId, completed, total: points.length};
+          console.log(
+            '[coordinate-click] AUTO STOP: matching text disappeared or frame unavailable',
+            { tabId, completed, total: points.length },
+          );
+          return {
+            ok: true,
+            stopped: true,
+            reason: 'text_missing',
+            tabId,
+            completed,
+            total: points.length,
+          };
         }
         if (visualize) {
           await showMarker(target, pt.x, pt.y, completed + 1, points.length);
@@ -127,52 +195,115 @@ async function clickGrid(tabId, x, y, gridSize = 3, step = 10, intervalMs = 180,
         }
         // The page can change while the marker is shown; check again.
         if (shouldContinue && !(await shouldContinue())) {
-          console.log('[coordinate-click] AUTO STOP before mouse press', {tabId, completed});
-          return {ok: true, stopped: true, reason: 'text_missing', tabId, completed, total: points.length};
+          console.log('[coordinate-click] AUTO STOP before mouse press', {
+            tabId,
+            completed,
+          });
+          return {
+            ok: true,
+            stopped: true,
+            reason: 'text_missing',
+            tabId,
+            completed,
+            total: points.length,
+          };
         }
         if (!(await isFocusedTab(tabId))) {
-          return {ok: true, stopped: true, reason: 'tab_inactive', tabId, completed, total: points.length};
+          return {
+            ok: true,
+            stopped: true,
+            reason: 'tab_inactive',
+            tabId,
+            completed,
+            total: points.length,
+          };
         }
-        const move = { type: "mouseMoved", x: pt.x, y: pt.y };
-        const press = { type: "mousePressed", x: pt.x, y: pt.y, button: "left", buttons: 1, clickCount: 1 };
-        const release = { type: "mouseReleased", x: pt.x, y: pt.y, button: "left", buttons: 0, clickCount: 1 };
-        await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", move);
-        await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", press);
+        const move = { type: 'mouseMoved', x: pt.x, y: pt.y };
+        const press = {
+          type: 'mousePressed',
+          x: pt.x,
+          y: pt.y,
+          button: 'left',
+          buttons: 1,
+          clickCount: 1,
+        };
+        const release = {
+          type: 'mouseReleased',
+          x: pt.x,
+          y: pt.y,
+          button: 'left',
+          buttons: 0,
+          clickCount: 1,
+        };
+        await chrome.debugger.sendCommand(
+          target,
+          'Input.dispatchMouseEvent',
+          move,
+        );
+        await chrome.debugger.sendCommand(
+          target,
+          'Input.dispatchMouseEvent',
+          press,
+        );
         await sleep(80);
-        await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", release);
+        await chrome.debugger.sendCommand(
+          target,
+          'Input.dispatchMouseEvent',
+          release,
+        );
         completed++;
         console.log(`[coordinate-click] ${completed}/${points.length}`, pt);
         if (completed < points.length) await sleep(intervalMs);
       }
       return { ok: true, tabId, completed, points };
     } catch (error) {
-      console.error("[coordinate-click] sweep interrupted", { completed, error });
+      console.error('[coordinate-click] sweep interrupted', {
+        completed,
+        error,
+      });
       throw error;
     } finally {
-      try { await chrome.debugger.detach(target); }
-      catch (error) { console.warn("[coordinate-click] detach failed", error); }
+      try {
+        await chrome.debugger.detach(target);
+      } catch (error) {
+        console.warn('[coordinate-click] detach failed', error);
+      }
     }
   });
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type !== "CLICK_AT" && message?.type !== "CLICK_GRID") return false;
+  if (message?.type !== 'CLICK_AT' && message?.type !== 'CLICK_GRID')
+    return false;
   sendResponse({ ok: true, queued: true });
-  const gridSize = message.type === "CLICK_AT" ? 1 : getGridSize(message);
+  const gridSize = message.type === 'CLICK_AT' ? 1 : getGridSize(message);
   // Give the popup time to close, then start the sweep.
-  clickGrid(message.tabId, message.x, message.y, gridSize, message.step ?? 10, message.intervalMs ?? 180, 600, message.visualize !== false)
-    .then(result => console.log("[coordinate-click] popup sweep completed", result))
-    .catch(error => console.error("[coordinate-click] popup sweep failed", error));
+  clickGrid(
+    message.tabId,
+    message.x,
+    message.y,
+    gridSize,
+    message.step ?? 10,
+    message.intervalMs ?? 180,
+    600,
+    message.visualize !== false,
+  )
+    .then((result) =>
+      console.log('[coordinate-click] popup sweep completed', result),
+    )
+    .catch((error) =>
+      console.error('[coordinate-click] popup sweep failed', error),
+    );
   return false;
 });
-
 
 // Automatic rules: each rule runs at most once per top-level page load.
 const autoFired = new Map(); // tabId -> Set(ruleId)
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  if (changeInfo.status === 'loading' || changeInfo.url) autoFired.delete(tabId);
+  if (changeInfo.status === 'loading' || changeInfo.url)
+    autoFired.delete(tabId);
 });
-chrome.tabs.onRemoved.addListener(tabId => autoFired.delete(tabId));
+chrome.tabs.onRemoved.addListener((tabId) => autoFired.delete(tabId));
 
 chrome.runtime.onMessage.addListener((message, sender) => {
   if (message?.type !== 'AUTO_TEXT_FOUND') return false;
@@ -183,12 +314,17 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     const tab = await chrome.tabs.get(tabId);
     if (!tab.url) return;
     for (const rule of autoRules) {
-      if (!rule.enabled || !rule.urlMatch?.trim() || !rule.textMatch?.trim()) continue;
-      if (!tab.url.toLowerCase().includes(rule.urlMatch.toLowerCase())) continue;
+      if (!rule.enabled || !rule.urlMatch?.trim() || !rule.textMatch?.trim())
+        continue;
+      if (!tab.url.toLowerCase().includes(rule.urlMatch.toLowerCase()))
+        continue;
       if (rule.textMatch.toLowerCase() !== message.textMatch) continue;
       // Guard synchronously before starting the asynchronous sweep.
       let fired = autoFired.get(tabId);
-      if (!fired) { fired = new Set(); autoFired.set(tabId, fired); }
+      if (!fired) {
+        fired = new Set();
+        autoFired.set(tabId, fired);
+      }
       if (fired.has(rule.id)) continue;
       fired.add(rule.id);
       const frameId = sender.frameId ?? 0;
@@ -201,25 +337,54 @@ chrome.runtime.onMessage.addListener((message, sender) => {
         try {
           const currentTab = await chrome.tabs.get(tabId);
           if (currentTab.url !== expectedUrl) return false;
-          const options = documentId ? {documentId} : {frameId};
-          const response = await chrome.tabs.sendMessage(tabId,
-            {type: 'CHECK_TEXT_PRESENT', textMatch: needle}, options);
+          const options = documentId ? { documentId } : { frameId };
+          const response = await chrome.tabs.sendMessage(
+            tabId,
+            { type: 'CHECK_TEXT_PRESENT', textMatch: needle },
+            options,
+          );
           return response?.present === true;
         } catch (err) {
-          console.log('[coordinate-click] text recheck failed; stopping', err.message);
+          console.log(
+            '[coordinate-click] text recheck failed; stopping',
+            err.message,
+          );
           return false;
         }
       };
-      console.log('[coordinate-click] AUTO MATCH', {tabId, ruleId: rule.id, frameId, url: tab.url});
-      clickGrid(tabId, rule.x, rule.y, rule.gridSize ?? (rule.radius*2+1),
-        rule.step, rule.intervalMs, 0, rule.visualize, shouldContinue)
-        .then(result => {
-          if (result.stopped && result.completed === 0 && autoFired.get(tabId) === fired) fired.delete(rule.id);
+      console.log('[coordinate-click] AUTO MATCH', {
+        tabId,
+        ruleId: rule.id,
+        frameId,
+        url: tab.url,
+      });
+      clickGrid(
+        tabId,
+        rule.x,
+        rule.y,
+        rule.gridSize ?? rule.radius * 2 + 1,
+        rule.step,
+        rule.intervalMs,
+        0,
+        rule.visualize,
+        shouldContinue,
+      )
+        .then((result) => {
+          if (
+            result.stopped &&
+            result.completed === 0 &&
+            autoFired.get(tabId) === fired
+          )
+            fired.delete(rule.id);
           console.log('[coordinate-click] AUTO FINISHED', rule.id, result);
         })
-        .catch(error => console.error('[coordinate-click] AUTO FAILED', rule.id, error));
+        .catch((error) =>
+          console.error('[coordinate-click] AUTO FAILED', rule.id, error),
+        );
     }
-  })().catch(error => console.warn('[coordinate-click] rule check failed', error));
+  })().catch((error) =>
+    console.warn('[coordinate-click] rule check failed', error),
+  );
   return false;
 });
 
@@ -229,21 +394,33 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     (async () => {
       // The toolbar popup may own focus. Resolve its underlying normal window
       // rather than applying the stricter click-execution focus guard here.
-      const browserWindow = await chrome.windows.getLastFocused({windowTypes:['normal']});
+      const browserWindow = await chrome.windows.getLastFocused({
+        windowTypes: ['normal'],
+      });
       const tab = await chrome.tabs.get(message.tabId);
       if (!tab.active || tab.windowId !== browserWindow.id) {
-        throw new Error('The target tab changed. Reopen the extension on the page you want to pick.');
+        throw new Error(
+          'The target tab changed. Reopen the extension on the page you want to pick.',
+        );
       }
       pickingTabs.add(message.tabId);
       try {
-        const result = await chrome.tabs.sendMessage(message.tabId, {type:'START_POINT_PICKER'}, {frameId:0});
+        const result = await chrome.tabs.sendMessage(
+          message.tabId,
+          { type: 'START_POINT_PICKER' },
+          { frameId: 0 },
+        );
         if (!result?.ok) throw new Error('Picker unavailable.');
-        respond({ok:true});
+        respond({ ok: true });
       } catch {
         pickingTabs.delete(message.tabId);
-        respond({ok:false,error:'Refresh the page and try again. Chrome internal pages cannot be picked.'});
+        respond({
+          ok: false,
+          error:
+            'Refresh the page and try again. Chrome internal pages cannot be picked.',
+        });
       }
-    })().catch(error => respond({ok:false,error:error.message}));
+    })().catch((error) => respond({ ok: false, error: error.message }));
     return true;
   }
   if (message?.type === 'POINT_PICKER_DONE') {
@@ -252,28 +429,58 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       if (sender.frameId !== 0 || !pickingTabs.has(tabId)) return;
       pickingTabs.delete(tabId);
       const point = message.point;
-      if (!point || !Number.isInteger(point.x) || !Number.isInteger(point.y) || point.x < 0 || point.y < 0) return;
-      const {pickerTarget, manualDraft, rulesDraft} = await chrome.storage.local.get(['pickerTarget','manualDraft','rulesDraft']);
+      if (
+        !point ||
+        !Number.isInteger(point.x) ||
+        !Number.isInteger(point.y) ||
+        point.x < 0 ||
+        point.y < 0
+      )
+        return;
+      const { pickerTarget, manualDraft, rulesDraft } =
+        await chrome.storage.local.get([
+          'pickerTarget',
+          'manualDraft',
+          'rulesDraft',
+        ]);
       if (pickerTarget?.tabId !== tabId) return;
       if (pickerTarget.type === 'rule') {
-        if (rulesDraft?.tabId !== tabId || rulesDraft.ruleId !== pickerTarget.ruleId) return;
-        const rules = rulesDraft.rules.map(rule => rule.id === pickerTarget.ruleId
-          ? {...rule,...point,_open:true} : rule);
-        if (!rules.some(rule => rule.id === pickerTarget.ruleId)) return;
-        await chrome.storage.local.set({rulesDraft:{...rulesDraft,rules,picked:true},pickerTarget:null});
+        if (
+          rulesDraft?.tabId !== tabId ||
+          rulesDraft.ruleId !== pickerTarget.ruleId
+        )
+          return;
+        const rules = rulesDraft.rules.map((rule) =>
+          rule.id === pickerTarget.ruleId
+            ? { ...rule, ...point, _open: true }
+            : rule,
+        );
+        if (!rules.some((rule) => rule.id === pickerTarget.ruleId)) return;
+        await chrome.storage.local.set({
+          rulesDraft: { ...rulesDraft, rules, picked: true },
+          pickerTarget: null,
+        });
       } else {
         if (manualDraft?.tabId !== tabId) return;
-        await chrome.storage.local.set({manualDraft:{...manualDraft,...point,picked:true},pickerTarget:null});
+        await chrome.storage.local.set({
+          manualDraft: { ...manualDraft, ...point, picked: true },
+          pickerTarget: null,
+        });
       }
       if (await isFocusedTab(tabId)) {
-        try { await chrome.action.openPopup(); }
-        catch { /* Coordinates remain available when the user reopens the popup. */ }
+        try {
+          await chrome.action.openPopup();
+        } catch {
+          /* Coordinates remain available when the user reopens the popup. */
+        }
       }
-    })().catch(error => console.warn('[coordinate-click] picker failed', error));
+    })().catch((error) =>
+      console.warn('[coordinate-click] picker failed', error),
+    );
   }
   return false;
 });
 chrome.tabs.onUpdated.addListener((tabId, change) => {
   if (change.status === 'loading') pickingTabs.delete(tabId);
 });
-chrome.tabs.onRemoved.addListener(tabId => pickingTabs.delete(tabId));
+chrome.tabs.onRemoved.addListener((tabId) => pickingTabs.delete(tabId));

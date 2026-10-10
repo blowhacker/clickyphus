@@ -3,12 +3,7 @@
   "name": "Coordinate Click Companion",
   "version": "0.7.0",
   "description": "Manual and conditional coordinate grid clicks via Chrome DevTools Protocol.",
-  "permissions": [
-    "debugger",
-    "activeTab",
-    "storage",
-    "tabs"
-  ],
+  "permissions": ["debugger", "activeTab", "storage", "tabs"],
   "background": {
     "service_worker": "background.js"
   },
@@ -16,18 +11,11 @@
     "default_title": "Coordinate Click",
     "default_popup": "popup/popup.html"
   },
-  "host_permissions": [
-    "<all_urls>"
-  ],
+  "host_permissions": ["<all_urls>"],
   "content_scripts": [
     {
-      "matches": [
-        "<all_urls>"
-      ],
-      "js": [
-        "content/picker.js",
-        "content/watcher.js"
-      ],
+      "matches": ["<all_urls>"],
+      "js": ["content/picker.js", "content/watcher.js"],
       "all_frames": true,
       "match_about_blank": true,
       "run_at": "document_idle"
