@@ -4,9 +4,35 @@ A Chrome Manifest V3 unpacked extension for browser-level coordinate clicks usin
 
 ## Installation
 
-1. Unzip the archive.
-2. In Chrome, open `chrome://extensions`, enable Developer mode, choose **Load unpacked** and select the extracted folder.
+1. Clone or download this repository.
+2. In Chrome, open `chrome://extensions`, enable Developer mode, choose **Load unpacked** and select the `extension/` folder.
 3. Click the toolbar icon to run manual sweeps or add automatic rules.
+
+## Repository layout and packaging
+
+```text
+extension/                 Loadable extension; only runtime files
+  manifest.json
+  background.js
+  content/                 Page picker and automatic text watcher
+  popup/                   Popup HTML and scripts
+scripts/
+  package.py               Creates the distribution ZIP
+dist/                      Generated archives (gitignored)
+README.md                  Project documentation
+```
+
+To create the upload archive, run:
+
+```sh
+python3 scripts/package.py
+```
+
+This creates `dist/coordinate-click-companion-<version>.zip`, using the version
+from the manifest. The archive has `manifest.json` at its root and includes only
+the contents of `extension/`, without the README or development files. To load
+the packaged version locally, extract the ZIP and select the extracted folder
+with **Load unpacked**.
 
 For manual tests, expand **Test a click or grid sweep** and choose **Pick on page**. Click a point on the crosshair overlay to capture its viewport X/Y coordinates without activating the underlying control. The popup reopens with the selected point and your test settings; if it does not reopen automatically, click the extension icon. Escape cancels. Picking also cancels when you switch tabs or after 60 seconds. Automatic clicks pause during picking. Refresh existing pages after reloading the extension to load the picker script.
 
@@ -29,7 +55,7 @@ Even-sized grids have no single centre cell; the supplied coordinate is between 
 
 ## Companion extension API
 
-Update the placeholder main extension ID in `manifest.json` and `background.js` before using external messages.
+Update the placeholder main extension ID in `extension/manifest.json` and `extension/background.js` before using external messages.
 
 ```js
 await chrome.runtime.sendMessage('COMPANION_EXTENSION_ID', {
