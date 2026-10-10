@@ -6,104 +6,316 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Coordinate Click</title>
   <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    :root {
+      color-scheme: light;
+      font: 13px/1.45 system-ui, sans-serif;
+      color: #243047;
+      background: #f3f5fa;
+    }
+
     body {
-      width: 360px;
-      max-height: 580px;
-      overflow: auto;
-      padding: 12px;
-      font: 13px system-ui, sans-serif
+      width: 390px;
+      margin: 0;
+      padding: 18px;
+      max-height: 590px;
+      overflow-y: auto;
+    }
+
+    h1 {
+      font-size: 19px;
+      letter-spacing: -.5px;
+      margin: 0;
+    }
+
+    h2 {
+      font-size: 14px;
+      margin: 0;
+    }
+
+    .intro {
+      margin-bottom: 20px;
+    }
+
+    .intro p {
+      margin: 3px 0 0;
     }
 
     label {
       display: block;
-      margin: 7px 0
+      margin: 10px 0;
+      font-size: 12px;
+      font-weight: 600;
     }
 
     input:not([type=checkbox]),
     select {
-      box-sizing: border-box;
       width: 100%;
-      padding: 5px
+      margin-top: 5px;
+      padding: 9px 10px;
+      border: 1px solid #cbd3e1;
+      border-radius: 7px;
+      background: white;
+      color: inherit;
+      font: inherit;
+    }
+
+    input[type=checkbox] {
+      accent-color: #425cdb;
+      vertical-align: middle;
+      margin: 0 6px 0 0;
     }
 
     button {
-      padding: 7px;
-      cursor: pointer
+      border: 1px solid #cbd3e1;
+      border-radius: 7px;
+      padding: 8px 11px;
+      background: white;
+      color: #34425b;
+      font: 600 12px system-ui;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #edf1fb;
+      border-color: #9baad2;
+    }
+
+    :focus-visible {
+      outline: 3px solid #a7b7ff;
+      outline-offset: 2px;
     }
 
     button.primary {
       width: 100%;
-      margin-top: 8px
+      margin-top: 8px;
+      background: #425cdb;
+      border-color: #425cdb;
+      color: white;
+      padding: 11px;
     }
 
-    .rule {
-      border: 1px solid #aaa;
-      border-radius: 8px;
-      padding: 10px;
-      margin: 12px 0
+    button.primary:hover {
+      background: #344bc1;
+    }
+
+    .remove {
+      color: #b03c4a;
+      font-size: 11px;
     }
 
     .line {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 8px
+      gap: 12px;
     }
 
     .bar {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 8px
+      gap: 8px;
     }
 
     .hint {
-      color: #777;
-      font-size: 11px
+      color: #66738a;
+      font-size: 11px;
+      font-weight: 400;
     }
 
-    .rule { padding: 0; margin: 6px 0; overflow: hidden; }
+    p.hint {
+      margin: 8px 0 12px;
+    }
 
-    .rule summary { padding: 9px 10px; cursor: pointer; display: flex; align-items: center; gap: 8px; }
-    .rule summary::before { content: "▸"; flex: none; }
-    .rule details[open] > summary::before { content: "▾"; }
-    .rule-summary { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; font-size: 12px; }
-    .rule-editor { padding: 3px 10px 12px; border-top: 1px solid #ddd; }
-    .rule summary .rule-enabled { flex: none; margin: 0; }
-    .rule summary input[type=checkbox] { margin: 0; }
+    .panel {
+      background: white;
+      padding: 14px;
+      border: 1px solid #dce2ed;
+      border-radius: 12px;
+      margin-top: 18px;
+    }
+
+    .panel>.hint {
+      margin-bottom: 4px;
+    }
+
+    .panel>summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      list-style: none;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .panel>summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .panel>summary::after {
+      content: '⌄';
+      color: #66738a;
+    }
+
+    .panel[open]>summary::after {
+      transform: rotate(180deg);
+    }
+
+    .rule {
+      border: 1px solid #dce2ed;
+      background: white;
+      border-radius: 9px;
+      margin: 8px 0;
+      overflow: hidden;
+    }
+
+    .rule summary {
+      padding: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      list-style: none;
+    }
+
+    .rule summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .rule summary::after {
+      content: '⌄';
+      color: #66738a;
+    }
+
+    .rule details[open]>summary::after {
+      transform: rotate(180deg);
+    }
+
+    .rule-summary {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .rule-title,
+    .rule-meta {
+      display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .rule-title {
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .rule-meta {
+      font-size: 11px;
+      color: #66738a;
+      margin-top: 3px;
+    }
+
+    .rule-editor {
+      padding: 2px 12px 12px;
+      border-top: 1px solid #e5e9f1;
+    }
+
+    .rule summary .rule-enabled {
+      flex: none;
+      margin: 0;
+    }
+
+    .rule summary input[type=checkbox] {
+      margin: 0;
+    }
+
+    .rule[data-enabled="false"] .rule-summary {
+      opacity: .55;
+    }
+
+    .empty {
+      text-align: center;
+      padding: 20px 15px;
+      border: 1px dashed #cbd3e1;
+      border-radius: 9px;
+      color: #66738a;
+      font-size: 12px;
+    }
+
+    .empty strong {
+      display: block;
+      color: #34425b;
+      margin-bottom: 4px;
+    }
+
+    #rules:not(:empty)+.empty {
+      display: none;
+    }
+
     #status {
-      white-space: pre-wrap
+      white-space: pre-wrap;
+      font-size: 12px;
+      border-radius: 7px;
+      margin: 12px 0 0;
+    }
+
+    #status:empty {
+      display: none;
+    }
+
+    #status:not(:empty) {
+      padding: 10px;
+      background: #e8eefc;
+      color: #344ba0;
+    }
+
+    #status[data-tone="error"] {
+      background: #fff0f1;
+      color: #a52e40;
     }
   </style>
 </head>
 
 <body>
+  <header class="intro">
+    <h1>Coordinate Click</h1>
+    <p class="hint">Automate repeat clicks. Test with precision.</p>
+  </header>
   <div class="bar">
-    <h3>Automatic rules</h3><button id="add" type="button">+ Add rule</button>
+    <h2>Automatic rules</h2><button id="add" type="button">+ Add rule</button>
   </div>
-  <p class="hint">Each enabled rule requires both a URL substring and a page text substring. Fires once per page load.
-    Runs in all accessible frames.</p>
+  <p class="hint">Click when both the URL and page text match. Enabled rules run once per page load, in accessible
+    frames.</p>
   <div id="rules"></div>
-  <p id="status" role="status"></p>
-  <hr>
-  <h3>Manual click / grid sweep <small class="hint">(test tool)</small></h3>
-  <form id="manual">
-    <div class="line"><label>X<input name="x" type="number" min="0" value="295" required></label><label>Y<input name="y"
-          type="number" min="0" value="355" required></label></div>
-    <label>Grid size<select name="gridSize" class="sizes"></select></label>
-    <div class="line"><label>Spacing (px)<input name="step" type="number" min="1" max="100" value="10"
-          required></label><label>Delay (ms)<input name="intervalMs" type="number" min="80" max="5000" value="180"
-          required></label></div>
-    <label><input type="checkbox" name="visualize" checked> Show click markers</label>
-    <button class="primary" type="submit">Click / Sweep</button>
-  </form>
+  <div class="empty"><strong>No rules yet</strong>Add a rule to automate clicks on a matching page.</div>
+  <p id="status" role="status" aria-live="polite"></p>
+  <details class="panel">
+    <summary>Test a click or grid sweep</summary>
+    <p class="hint">Runs on the active tab. X and Y are viewport pixels.</p>
+    <form id="manual">
+      <div class="line"><label>X position<input name="x" type="number" min="0" value="295" required></label><label>Y
+          position<input name="y" type="number" min="0" value="355" required></label></div>
+      <label>Grid size<select name="gridSize" class="sizes"></select></label>
+      <div class="line"><label>Spacing (px)<input name="step" type="number" min="1" max="100" value="10"
+            required></label><label>Delay (ms)<input name="intervalMs" type="number" min="80" max="5000" value="180"
+            required></label></div>
+      <label><input type="checkbox" name="visualize" checked> Show click markers</label>
+      <button class="primary" type="submit">Run on active tab</button>
+    </form>
+  </details>
   <template id="rule-template">
     <section class="rule">
       <div class="bar"><label><input name="enabled" type="checkbox" checked> Enabled</label><button type="button"
           class="remove">Remove</button></div>
       <label>URL contains<input name="urlMatch" type="text" placeholder="example.com/path"></label>
-      <label>Page text contains<input name="textMatch" type="text" placeholder="Ready to continue" value="Performing security verification"></label>
-      <div class="line"><label>X<input name="x" type="number" min="0" value="623"></label><label>Y<input name="y"
-            type="number" min="0" value="400"></label></div>
+      <label>Page text contains<input name="textMatch" type="text" placeholder="Ready to continue"
+          value="Performing security verification"></label>
+      <div class="line"><label>X position<input name="x" type="number" min="0" value="313"></label><label>Y
+          position<input name="y" type="number" min="0" value="350"></label></div>
       <label>Grid size<select name="gridSize" class="sizes"></select></label>
       <div class="line"><label>Spacing (px)<input name="step" type="number" min="1" max="100"
             value="10"></label><label>Delay (ms)<input name="intervalMs" type="number" min="80" max="5000"

@@ -12,6 +12,12 @@
     const summary = document.createElement('summary');
     const title = document.createElement('span');
     title.className = 'rule-summary';
+    const heading = document.createElement('span');
+    heading.className = 'rule-title';
+    const meta = document.createElement('span');
+    meta.className = 'rule-meta';
+    title.append(heading, meta);
+    details.open = rule.dataset.new === 'true';
     const editor = document.createElement('div');
     editor.className = 'rule-editor';
 
@@ -24,6 +30,7 @@
         label.textContent = '';
         label.append(checkbox);
         label.title = 'Enable/disable this rule';
+        checkbox.setAttribute('aria-label', 'Enable rule');
         summary.append(label);
         // Clicking the checkbox should not also expand/collapse the row.
         label.addEventListener('click', e => e.stopPropagation());
@@ -42,7 +49,9 @@
       const size = get('gridSize') || '?';
       const x = get('x') || '?';
       const y = get('y') || '?';
-      title.textContent = `${url}  ·  ${phrase}  ·  ${size}×${size} @ ${x},${y}`;
+      heading.textContent = url === '(set URL)' ? 'New rule · add a URL' : url;
+      meta.textContent = `${phrase} · ${size}×${size} at ${x}, ${y}`;
+      rule.dataset.enabled = String(checkbox.checked);
       title.title = title.textContent;
     };
     rule.addEventListener('input', update);

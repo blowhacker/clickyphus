@@ -29,7 +29,7 @@ Update the placeholder main extension ID in `manifest.json` and `background.js` 
 ```js
 await chrome.runtime.sendMessage('COMPANION_EXTENSION_ID', {
   type: 'CLICK_GRID', tabId: tab.id,
-  x: 623, y: 400, gridSize: 20, step: 10, intervalMs: 180,
+  x: 313, y: 350, gridSize: 20, step: 10, intervalMs: 180,
   visualize: true
 });
 ```
