@@ -271,9 +271,18 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       pickingTabs.delete(tabId);
       const point = message.point;
       if (!point || !Number.isInteger(point.x) || !Number.isInteger(point.y) || point.x < 0 || point.y < 0) return;
-      const {manualDraft} = await chrome.storage.local.get('manualDraft');
-      if (manualDraft?.tabId !== tabId) return;
-      await chrome.storage.local.set({manualDraft:{...manualDraft,...point,picked:true}});
+      const {pickerTarget, manualDraft, rulesDraft} = await chrome.storage.local.get(['pickerTarget','manualDraft','rulesDraft']);
+      if (pickerTarget?.tabId !== tabId) return;
+      if (pickerTarget.type === 'rule') {
+        if (rulesDraft?.tabId !== tabId || rulesDraft.ruleId !== pickerTarget.ruleId) return;
+        const rules = rulesDraft.rules.map(rule => rule.id === pickerTarget.ruleId
+          ? {...rule,...point,_open:true} : rule);
+        if (!rules.some(rule => rule.id === pickerTarget.ruleId)) return;
+        await chrome.storage.local.set({rulesDraft:{...rulesDraft,rules,picked:true},pickerTarget:null});
+      } else {
+        if (manualDraft?.tabId !== tabId) return;
+        await chrome.storage.local.set({manualDraft:{...manualDraft,...point,picked:true},pickerTarget:null});
+      }
       if (await isFocusedTab(tabId)) {
         try { await chrome.action.openPopup(); }
         catch { /* Coordinates remain available when the user reopens the popup. */ }

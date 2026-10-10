@@ -19,7 +19,7 @@ populateSizes($('#manual .sizes'));
 function createRule(rule={}) {
   const node = $('#rule-template').content.firstElementChild.cloneNode(true);
   node.dataset.id = rule.id || crypto.randomUUID();
-  node.dataset.new = String(!rule.id);
+  node.dataset.new = String(!rule.id || !!rule._open);
   populateSizes($('.sizes', node), rule.gridSize ?? (rule.radius != null ? 2*rule.radius+1 : 13));
   for (const key of ['enabled','urlMatch','textMatch','x','y','step','intervalMs','visualize']) {
     const field = node.querySelector(`[name="${key}"]`);
@@ -30,6 +30,7 @@ function createRule(rule={}) {
   }
   $('.remove',node).addEventListener('click', async () => { node.remove(); await saveRules(); });
   $('.save',node).addEventListener('click', saveRules);
+  $('.pick-rule',node).addEventListener('click', () => pickRulePosition(node));
   store.append(node);
 }
 function readRule(node) {
@@ -57,7 +58,7 @@ async function saveRules() {
     }
   }
   try {
-    await chrome.storage.local.set({autoRules:rules});
+    await chrome.storage.local.set({autoRules:rules, rulesDraft:null});
     $('#status').dataset.tone = 'success';
     $('#status').textContent = rules.length ? `Saved ${rules.length} ${rules.length === 1 ? 'rule' : 'rules'}.` : 'All rules removed.';
   } catch (error) {
@@ -65,16 +66,27 @@ async function saveRules() {
     $('#status').textContent = `Could not save rules: ${error.message}`;
   }
 }
-$('#add').addEventListener('click', () => {
-  createRule();
+$('#add').addEventListener('click', async () => {
+  await rulesReady;
+  let urlMatch = '';
+  try {
+    const tab = await getTargetTab();
+    const url = new URL(tab?.url);
+    if (url.protocol === 'https:' || url.protocol === 'http:') urlMatch = url.hostname;
+  } catch { /* Leave the URL editable when the current page has no web domain. */ }
+  createRule({urlMatch});
   requestAnimationFrame(() => {
     const field = store.lastElementChild?.querySelector('[name="urlMatch"]');
     field?.focus();
   });
 });
-chrome.storage.local.get(['autoRules','autoRule']).then(v => {
-  const rules = v.autoRules || (v.autoRule ? [{...v.autoRule,id:'legacy'}] : []);
+const rulesReady = chrome.storage.local.get(['autoRules','autoRule','rulesDraft']).then(v => {
+  const rules = v.rulesDraft?.rules || v.autoRules || (v.autoRule ? [{...v.autoRule,id:'legacy'}] : []);
   rules.forEach(createRule);
+  if (v.rulesDraft?.picked) {
+    $('#status').dataset.tone = 'success';
+    $('#status').textContent = 'Rule position picked. Review your changes, then save rules.';
+  }
 });
 $('#manual').addEventListener('submit', async e => {
   e.preventDefault();
@@ -104,7 +116,7 @@ $('#manual').addEventListener('submit', async e => {
 const manualFields = ['x', 'y', 'gridSize', 'step', 'intervalMs', 'visualize'];
 const manualReady = (async () => {
   const tab = await getTargetTab();
-  const {manualDraft} = await chrome.storage.local.get('manualDraft');
+  const {manualDraft, rulesDraft} = await chrome.storage.local.get(['manualDraft','rulesDraft']);
   if (!manualDraft || manualDraft.tabId !== tab?.id) return;
   for (const name of manualFields) {
     const field = $('#manual').elements.namedItem(name);
@@ -112,7 +124,7 @@ const manualReady = (async () => {
     if (field.type === 'checkbox') field.checked = manualDraft[name];
     else field.value = manualDraft[name];
   }
-  if (manualDraft.picked) {
+  if (manualDraft.picked && !rulesDraft) {
     $('.panel').open = true;
     $('#status').dataset.tone = 'success';
     $('#status').textContent = `Position picked: X ${manualDraft.x}, Y ${manualDraft.y}. Ready to test.`;
@@ -130,7 +142,7 @@ $('#pick-position').addEventListener('click', async () => {
       const field = $('#manual').elements.namedItem(name);
       draft[name] = field.type === 'checkbox' ? field.checked : field.value;
     }
-    await chrome.storage.local.set({manualDraft:draft});
+    await chrome.storage.local.set({manualDraft:draft, pickerTarget:{type:'manual',tabId:tab.id}});
     const result = await chrome.runtime.sendMessage({type:'PICK_POINT', tabId:tab.id});
     if (!result?.ok) throw new Error(result?.error || 'Picker unavailable.');
     window.close();
@@ -140,3 +152,31 @@ $('#pick-position').addEventListener('click', async () => {
     $('.panel').open = true;
   } finally { button.disabled = false; }
 });
+
+async function pickRulePosition(node) {
+  const button = $('.pick-rule', node);
+  button.disabled = true;
+  try {
+    await Promise.all([rulesReady, manualReady]);
+    const tab = await getTargetTab();
+    if (!tab?.id) throw new Error('No active tab found.');
+    // Preserve raw values, including incomplete fields, without enabling drafts.
+    const rules = [...store.children].map(ruleNode => {
+      const rule = {id:ruleNode.dataset.id, _open:!!ruleNode.querySelector('details')?.open};
+      for (const field of ruleNode.querySelectorAll('[name]')) {
+        rule[field.name] = field.type === 'checkbox' ? field.checked : field.value;
+      }
+      return rule;
+    });
+    await chrome.storage.local.set({
+      rulesDraft:{rules,tabId:tab.id,ruleId:node.dataset.id,picked:false},
+      pickerTarget:{type:'rule',tabId:tab.id,ruleId:node.dataset.id}
+    });
+    const result = await chrome.runtime.sendMessage({type:'PICK_POINT',tabId:tab.id});
+    if (!result?.ok) throw new Error(result?.error || 'Picker unavailable.');
+    window.close();
+  } catch (error) {
+    $('#status').dataset.tone = 'error';
+    $('#status').textContent = `Could not pick a position: ${error.message}`;
+  } finally { button.disabled = false; }
+}
