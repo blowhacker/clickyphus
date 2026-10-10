@@ -1,93 +1,24 @@
-# Coordinate Click Companion
+# Coordinate Click Companion v0.5
 
-Minimal unpacked Manifest V3 Chrome extension that clicks viewport coordinates via the Chrome DevTools Protocol (`Input.dispatchMouseEvent`). It works at the browser input layer, so ordinary DOM, open/closed shadow DOM, and cross-origin nested iframes do not require traversal.
+An unpacked Chrome Manifest V3 extension for manual or automatic viewport-coordinate clicks using CDP (`chrome.debugger`).
 
-## Install from GitHub
+## Install
+1. Unzip. Go to `chrome://extensions`, turn on Developer mode, and choose **Load unpacked**.
+2. Select the `coordinate-click-companion-v5` directory.
+3. Open the toolbar popup. The top form runs manual clicks; the lower form saves an automatic rule.
 
-1. Download this repository as a ZIP and extract it, or `git clone` it.
-2. Navigate to `chrome://extensions`.
-3. Enable **Developer mode**.
-4. Click **Load unpacked** and choose the folder containing `manifest.json`.
-5. Open an ordinary webpage, click the extension icon, enter X/Y and press **Click**.
+## Auto rule
+Set **Page URL contains** (substring of the *top-level tab URL*) and **Page text contains** (case-insensitive substring found in any permitted frame). Configure X/Y (viewport coordinates), grid size, step and delay; enable the rule and save.
 
-Coordinates are **CSS pixels relative to the visible tab viewport**, not screen or full-document coordinates. The popup takes focus, but the debugger command targets the selected tab. Browser internal pages and some protected surfaces are not supported.
+When both conditions match, the grid fires **once per tab page load**. Reloading the page rearms the rule. Turning the rule off prevents future automatic sweeps. A matched cross-origin frame can report its text because its own extension content script scans it; the background service worker performs the actual CDP click in the tab viewport. For best results use a distinctive URL and text phrase.
 
-## Allow your main extension to call it
+## Permissions/privacy
+`debugger` dispatches input; `storage` persists the rule; `tabs` reads the top-level URL. Broad `<all_urls>` host access injects a page text watcher into webpages, including cross-origin frames where permitted. Text stays in the page; the watcher sends only the configured search phrase and match signal. Restricted Chrome pages and some sandboxed frames are excluded. Open shadow roots are scanned, closed roots are not. Embedded cross-origin content may require matching host access; not every special frame is injectable.
 
-1. Find the **main extension ID** in `chrome://extensions`.
-2. Replace `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa` in **both** `manifest.json` and `background.js` with that ID.
-3. Reload the companion extension in `chrome://extensions`.
-4. Find the **companion extension ID** in `chrome://extensions` and use it in your main extension's background/service worker:
+**Important:** Auto clicks can trigger actions multiple times (9/25/49 clicks) and can interact with sensitive controls. Start with single click or a safe test page. Disabling auto rule stops new automatic sweeps, but not one already in progress. CDP doesn't move the OS cursor; the optional visual marker displays click coordinates.
 
-```js
-const COMPANION_ID = "REPLACE_WITH_COMPANION_EXTENSION_ID";
+## Companion API
+Change placeholder main extension ID in `manifest.json` and `background.js`, reload, then send `CLICK_GRID` or `CLICK_AT` requests as before.
 
-async function remoteClick(tabId, x, y) {
-  const result = await chrome.runtime.sendMessage(COMPANION_ID, {
-    type: "CLICK_AT", tabId, x, y
-  });
-  if (!result?.ok) throw new Error(result?.error || "Click failed");
-  return result;
-}
-
-// Example, from the main extension's service worker:
-const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-await remoteClick(tab.id, 623, 400);
-```
-
-Your main extension needs the appropriate ability to identify its target tab (`activeTab` or `tabs` depending on its design), **not** `debugger` permission. The main extension's service worker is the simplest place to coordinate calls. If calling from a content script, relay to the main extension's service worker first.
-
-## Security and operational notes
-
-- The companion explicitly allows only the configured main extension ID for external messages. Do **not** use an open wildcard external access policy.
-- `debugger` is powerful: install only code you trust. The permission warning and Chrome debugging notification still apply even for a manually installed extension.
-- Do not grant arbitrary websites access to this API. The manifest contains no `externally_connectable.matches` for web pages.
-- Concurrent clicks to the same tab are queued. Each call attaches, presses, releases, and detaches. Another debugger using that tab can cause attachment to fail.
-- Returned `ok: true` indicates mouse events were dispatched, **not** that the website performed the intended action.
-- This does not automate Chrome UI outside the content viewport. The tab may reject inputs while navigating or not be in a suitable state.
-- For stable IDs across machines, Chrome unpacked-extension IDs may change with extension key/path. Update both IDs after installation if needed.
-
-
-## Troubleshooting popup clicks
-
-The popup now closes before mouse input is dispatched (~500 ms later). Clicks do not physically move the operating-system cursor. Check `chrome://extensions` → this extension → **Service worker** → Inspect for `[coordinate-click]` logs and errors. Note that a queued result only confirms the request was accepted, not that the click succeeded. Avoid testing on `chrome://` pages or while the target page has DevTools attached (debugger conflicts can occur).
-
-## Grid sweep (v3)
-
-The popup lets you select 1, 9, 25, or 49 clicks with configurable spacing
-(default 10 CSS pixels). The center is clicked first, followed by successive
-square rings. A 3×3 sweep at (623,400) covers x=613/623/633 and
-y=390/400/410. All points are viewport-relative. The pointer on your desktop
-will not visibly move because CDP injects mouse events into the browser.
-
-To invoke a grid from your main extension:
-
-```js
-const result = await chrome.runtime.sendMessage("COMPANION_EXTENSION_ID", {
-  type: "CLICK_GRID",
-  tabId: tab.id,
-  x: 623,
-  y: 400,
-  radius: 1,      // 0=single, 1=3×3, 2=5×5, 3=7×7, 4=9×9
-  step: 10,       // pixels
-  intervalMs: 180
-});
-```
-
-**Caution:** Each click is real browser-level input. Controls may be activated
-multiple times, and navigation or DOM changes may occur mid-sweep. Only use
-on pages where repeated clicks are acceptable. See background.js service worker
-console for per-click logging.
-
-
-## v4 visual click markers
-
-The popup has a **Show click crosshair and coordinates** checkbox (on by default).
-Each attempted click briefly displays a red ring, crosshair and number over the top-level
-page at the requested viewport coordinates. It does not capture the physical OS mouse.
-Markers are click-through (`pointer-events: none`) and display over cross-origin frames.
-A marker shows where input was sent, **not proof that a page action succeeded**.
-For companion calls, supply `visualize: false` to disable it.
-If the target page navigates or blocks overlay creation, the CDP click still runs.
-If measurements came from a screenshot, make sure to account for screenshot
-scaling, device pixel ratio, and browser chrome versus webpage viewport.
+## Debugging
+`chrome://extensions` → Service worker → Inspect. Filter console for `[coordinate-click] AUTO RULE MATCHED` / `AUTO SWEEP DONE`.

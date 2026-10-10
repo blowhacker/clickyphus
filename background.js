@@ -131,3 +131,41 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     .catch(error => console.error("[coordinate-click] popup sweep failed", error));
   return false;
 });
+
+
+// ----- Automatic conditional sweep: one rule, URL AND page text -----
+// Watcher reports are emitted separately from each permitted frame, including
+// cross-origin frames. Tab URL is the top-level page URL, not the frame URL.
+const autoFired = new Map(); // tabId -> true, reset on top-level navigation
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status === 'loading' || changeInfo.url) autoFired.delete(tabId);
+});
+chrome.tabs.onRemoved.addListener(tabId => autoFired.delete(tabId));
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type !== 'AUTO_TEXT_FOUND') return false;
+  (async () => {
+    const tabId = sender.tab?.id;
+    if (!Number.isInteger(tabId) || autoFired.has(tabId)) return;
+    const { autoRule } = await chrome.storage.local.get('autoRule');
+    if (!autoRule?.enabled || !autoRule.urlMatch?.trim() || !autoRule.textMatch?.trim()) return;
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab.url?.toLowerCase().includes(autoRule.urlMatch.toLowerCase())) return;
+    // The message contains no user page content; verify only that the reporter
+    // matched the currently saved phrase. Content scripts are extension-owned.
+    if (message.textMatch !== autoRule.textMatch.toLowerCase()) return;
+    if (autoFired.has(tabId)) return;
+    autoFired.set(tabId, true); // mark before async work to prevent duplicate sweeps
+    console.log('[coordinate-click] AUTO RULE MATCHED', { tabId, url: tab.url, frameId: sender.frameId });
+    try {
+      await clickGrid(tabId, autoRule.x, autoRule.y, autoRule.radius, autoRule.step,
+        autoRule.intervalMs, 0, autoRule.visualize);
+      console.log('[coordinate-click] AUTO SWEEP DONE', { tabId });
+    } catch (error) {
+      console.error('[coordinate-click] AUTO SWEEP FAILED', error);
+      // Keep once-per-load guard even if the page rejects a click; no retry storm.
+    }
+  })().catch(error => console.warn('[coordinate-click] rule check failed', error));
+  return false;
+});

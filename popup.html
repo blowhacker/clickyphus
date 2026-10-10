@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Coordinate Click</title>
   <style>
-    body { width: 245px; padding: 14px; font: 13px system-ui, sans-serif; }
+    body { width: 300px; padding: 14px; font: 13px system-ui, sans-serif; }
     label { display: block; margin: 8px 0; }
     input, select { width: 100%; box-sizing: border-box; padding: 6px; }
     button { margin-top: 8px; width: 100%; padding: 8px; }
@@ -30,6 +30,25 @@
     <button type="submit">Click / Sweep</button>
   </form>
   <p><small>Starts at the center, then surrounding points. Each click can activate page controls; use carefully.</small></p>
+  <hr>
+  <strong>Automatic rule (URL AND page text)</strong>
+  <p><small>Runs once per page load when both conditions match. Searches permitted frames and open shadow DOM.</small></p>
+  <form id="auto-form">
+    <label><input id="autoEnabled" type="checkbox" style="width:auto"> Enable automatic clicking</label>
+    <label>Page URL contains <input id="urlMatch" type="text" placeholder="example.com/path" required></label>
+    <label>Page text contains <input id="textMatch" type="text" placeholder="Your target phrase" required></label>
+    <label>Auto X <input id="autoX" type="number" value="345" min="0" required></label>
+    <label>Auto Y <input id="autoY" type="number" value="417" min="0" required></label>
+    <label>Auto pattern <select id="autoRadius">
+      <option value="0">Single click</option><option value="1" selected>3 × 3</option>
+      <option value="2">5 × 5</option><option value="3">7 × 7</option>
+    </select></label>
+    <label>Spacing (px) <input id="autoStep" type="number" value="10" min="1" max="100" required></label>
+    <label>Pause (ms) <input id="autoInterval" type="number" value="180" min="80" max="5000" required></label>
+    <label><input id="autoVisualize" type="checkbox" checked style="width:auto"> Show click markers</label>
+    <button type="submit">Save automatic rule</button>
+    <p id="autoStatus" role="status"></p>
+  </form>
   <p id="status" role="status"></p>
   <script src="popup.js"></script>
 </body>
