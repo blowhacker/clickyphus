@@ -1,7 +1,7 @@
 const $ = (sel, root=document) => root.querySelector(sel);
 const store = $('#rules');
 const values = [1,3,5,7,9,11,13,15,17,19,20];
-function populateSizes(select, value=3) {
+function populateSizes(select, value=13) {
   for (const size of values) {
     const option = document.createElement('option');
     option.value = size;
@@ -14,7 +14,7 @@ populateSizes($('#manual .sizes'));
 function createRule(rule={}) {
   const node = $('#rule-template').content.firstElementChild.cloneNode(true);
   node.dataset.id = rule.id || crypto.randomUUID();
-  populateSizes($('.sizes', node), rule.gridSize ?? (rule.radius != null ? 2*rule.radius+1 : 3));
+  populateSizes($('.sizes', node), rule.gridSize ?? (rule.radius != null ? 2*rule.radius+1 : 13));
   for (const key of ['enabled','urlMatch','textMatch','x','y','step','intervalMs','visualize']) {
     const field = node.querySelector(`[name="${key}"]`);
     if (rule[key] !== undefined) {
