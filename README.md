@@ -51,3 +51,30 @@ Your main extension needs the appropriate ability to identify its target tab (`a
 ## Troubleshooting popup clicks
 
 The popup now closes before mouse input is dispatched (~500 ms later). Clicks do not physically move the operating-system cursor. Check `chrome://extensions` → this extension → **Service worker** → Inspect for `[coordinate-click]` logs and errors. Note that a queued result only confirms the request was accepted, not that the click succeeded. Avoid testing on `chrome://` pages or while the target page has DevTools attached (debugger conflicts can occur).
+
+## Grid sweep (v3)
+
+The popup lets you select 1, 9, 25, or 49 clicks with configurable spacing
+(default 10 CSS pixels). The center is clicked first, followed by successive
+square rings. A 3×3 sweep at (623,400) covers x=613/623/633 and
+y=390/400/410. All points are viewport-relative. The pointer on your desktop
+will not visibly move because CDP injects mouse events into the browser.
+
+To invoke a grid from your main extension:
+
+```js
+const result = await chrome.runtime.sendMessage("COMPANION_EXTENSION_ID", {
+  type: "CLICK_GRID",
+  tabId: tab.id,
+  x: 623,
+  y: 400,
+  radius: 1,      // 0=single, 1=3×3, 2=5×5, 3=7×7, 4=9×9
+  step: 10,       // pixels
+  intervalMs: 180
+});
+```
+
+**Caution:** Each click is real browser-level input. Controls may be activated
+multiple times, and navigation or DOM changes may occur mid-sweep. Only use
+on pages where repeated clicks are acceptable. See background.js service worker
+console for per-click logging.

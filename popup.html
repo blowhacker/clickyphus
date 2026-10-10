@@ -5,20 +5,30 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Coordinate Click</title>
   <style>
-    body { width: 220px; padding: 14px; font: 13px system-ui, sans-serif; }
+    body { width: 245px; padding: 14px; font: 13px system-ui, sans-serif; }
     label { display: block; margin: 8px 0; }
-    input { width: 100%; box-sizing: border-box; padding: 6px; }
+    input, select { width: 100%; box-sizing: border-box; padding: 6px; }
     button { margin-top: 8px; width: 100%; padding: 8px; }
     #status { white-space: pre-wrap; overflow-wrap: anywhere; }
+    small { color: #777; }
   </style>
 </head>
 <body>
-  <strong>Click viewport coordinates</strong>
+  <strong>Viewport coordinate clicks</strong>
   <form id="form">
     <label>X <input id="x" type="number" value="190" min="0" step="any" required></label>
     <label>Y <input id="y" type="number" value="417" min="0" step="any" required></label>
-    <button type="submit">Click</button>
+    <label>Pattern <select id="radius">
+      <option value="0">Single click</option>
+      <option value="1" selected>3 × 3 (9 clicks)</option>
+      <option value="2">5 × 5 (25 clicks)</option>
+      <option value="3">7 × 7 (49 clicks)</option>
+    </select></label>
+    <label>Spacing (px) <input id="step" type="number" value="10" min="1" max="100" step="1" required></label>
+    <label>Pause between clicks (ms) <input id="interval" type="number" value="180" min="80" max="5000" step="1" required></label>
+    <button type="submit">Click / Sweep</button>
   </form>
+  <p><small>Starts at the center, then surrounding points. Each click can activate page controls; use carefully.</small></p>
   <p id="status" role="status"></p>
   <script src="popup.js"></script>
 </body>
