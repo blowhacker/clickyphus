@@ -61,6 +61,15 @@
       font-size: 11px
     }
 
+    .rule { padding: 0; margin: 6px 0; overflow: hidden; }
+
+    .rule summary { padding: 9px 10px; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+    .rule summary::before { content: "▸"; flex: none; }
+    .rule details[open] > summary::before { content: "▾"; }
+    .rule-summary { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; font-size: 12px; }
+    .rule-editor { padding: 3px 10px 12px; border-top: 1px solid #ddd; }
+    .rule summary .rule-enabled { flex: none; margin: 0; }
+    .rule summary input[type=checkbox] { margin: 0; }
     #status {
       white-space: pre-wrap
     }
@@ -68,7 +77,15 @@
 </head>
 
 <body>
-  <h3>Manual click / grid sweep</h3>
+  <div class="bar">
+    <h3>Automatic rules</h3><button id="add" type="button">+ Add rule</button>
+  </div>
+  <p class="hint">Each enabled rule requires both a URL substring and a page text substring. Fires once per page load.
+    Runs in all accessible frames.</p>
+  <div id="rules"></div>
+  <p id="status" role="status"></p>
+  <hr>
+  <h3>Manual click / grid sweep <small class="hint">(test tool)</small></h3>
   <form id="manual">
     <div class="line"><label>X<input name="x" type="number" min="0" value="295" required></label><label>Y<input name="y"
           type="number" min="0" value="355" required></label></div>
@@ -79,14 +96,6 @@
     <label><input type="checkbox" name="visualize" checked> Show click markers</label>
     <button class="primary" type="submit">Click / Sweep</button>
   </form>
-  <hr>
-  <div class="bar">
-    <h3>Automatic rules</h3><button id="add" type="button">+ Add rule</button>
-  </div>
-  <p class="hint">Each enabled rule requires both a URL substring and a page text substring. Fires once per page load.
-    Runs in all accessible frames.</p>
-  <div id="rules"></div>
-  <p id="status" role="status"></p>
   <template id="rule-template">
     <section class="rule">
       <div class="bar"><label><input name="enabled" type="checkbox" checked> Enabled</label><button type="button"
@@ -104,6 +113,7 @@
     </section>
   </template>
   <script src="popup.js"></script>
+  <script src="popup-layout.js"></script>
 </body>
 
 </html>
