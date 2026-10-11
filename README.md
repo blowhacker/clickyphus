@@ -74,3 +74,11 @@ This launches an isolated test profile, exercises the Allow User Scripts toggle,
 ## Development copy
 
 This project lives at `~/work/clickyphus`. The original `~/work/coordinate-click-companion` project remains separate. Load this copy’s `extension/` directory in Chrome to use Clickyphus. It has its own saved rules and permissions; enable Allow User Scripts for this copy if you use JavaScript rules.
+
+## First-install rules
+
+`extension/default-rules.js` defines the rules shipped with Clickyphus. It contains a plain `const RULES = [...]` array; you can also append with `RULES.push(...)`. The worker copies serializable settings into local storage once on fresh installation. Built-in JavaScript conditions execute as packaged extension code through `chrome.scripting`; they do not require Allow User Scripts. They appear in the popup editor with enable/disable and URL/click settings. Their condition code stays in the file. Custom JavaScript expressions entered in the popup still require Allow User Scripts.
+
+Add the real rules you want to ship to `RULES`, normally with `enabled: true`. A commented template in `default-rules.js` shows how to add another rule. Updates and reloads preserve existing rules, edits, and intentionally empty rule lists. After editing config, run `npm run build` (or `npm run prepare:rules`) and reload the extension. Changing a bundled condition changes its behavior on the next check after that reload; changing its default settings affects future installs. Keep each rule ID stable.
+
+See [the rule specification](docs/RULES.md) for fields and a complete example.

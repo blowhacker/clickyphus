@@ -44,6 +44,17 @@ configureGridFields($('#manual'));
 function createRule(rule = {}) {
   const node = $('#rule-template').content.firstElementChild.cloneNode(true);
   node.dataset.id = rule.id || crypto.randomUUID();
+  node.dataset.builtinId = rule.builtinId || '';
+  node.dataset.name = rule.name || '';
+  if (rule.builtinId) {
+    const option = document.createElement('option');
+    option.value = 'bundled';
+    option.textContent = 'Built-in JavaScript';
+    $('[name="ruleType"]', node).append(option);
+  }
+  $('.bundled-help', node).textContent = rule.name
+    ? `${rule.name}. Condition defined in default-rules.js; no User Scripts setup required.`
+    : 'Condition defined in default-rules.js; no User Scripts setup required.';
   node.dataset.new = String(!rule.id || !!rule._open);
   populateSizes(
     $('.sizes', node),
@@ -70,18 +81,22 @@ function createRule(rule = {}) {
   }
   configureGridFields(node);
   const updateRuleType = () => {
-    const expression = $('[name="ruleType"]', node).value === 'expression';
+    const type = $('[name="ruleType"]', node).value;
+    const expression = type === 'expression';
+    const bundled = type === 'bundled';
+    const scripted = expression || bundled;
+    $('.bundled-help', node).hidden = !bundled;
     $('.expression-field', node).hidden = !expression;
-    $('.text-field', node).hidden = expression;
+    $('.text-field', node).hidden = scripted;
     $('[name="expression"]', node).disabled = !expression;
-    $('[name="textMatch"]', node).disabled = expression;
+    $('[name="textMatch"]', node).disabled = scripted;
     node.querySelectorAll('[data-js-only]').forEach((element) => {
-      element.hidden = !expression;
+      element.hidden = !scripted;
     });
-    $('.position-heading', node).textContent = expression
+    $('.position-heading', node).textContent = scripted
       ? 'Saved center · fallback'
       : 'Click center';
-    $('.position-help', node).textContent = expression
+    $('.position-help', node).textContent = scripted
       ? 'Used only when your code returns true. A returned { x, y } sets the center instead; these fields can be blank.'
       : 'Viewport coordinates. The grid starts at the center and expands outward.';
   };
@@ -156,6 +171,8 @@ function readRule(node) {
   const get = (name) => node.querySelector(`[name="${name}"]`);
   return {
     id: node.dataset.id,
+    builtinId: node.dataset.builtinId || undefined,
+    name: node.dataset.name || undefined,
     enabled: get('enabled').checked,
     urlMatch: get('urlMatch').value.trim(),
     textMatch: get('textMatch').value.trim(),
@@ -177,8 +194,9 @@ async function saveRules() {
   const rules = [...store.children].map(readRule);
   for (const [index, r] of rules.entries()) {
     const expressionRule = r.ruleType === 'expression';
+    const bundledRule = r.ruleType === 'bundled';
     const issues = [];
-    if (!(expressionRule ? r.expression : r.textMatch)) {
+    if (!bundledRule && !(expressionRule ? r.expression : r.textMatch)) {
       issues.push([
         expressionRule ? 'expression' : 'textMatch',
         expressionRule ? 'Enter JavaScript code.' : 'Enter page text to match.',
@@ -186,7 +204,7 @@ async function saveRules() {
     }
     // JS coordinate objects override these fields. Validate fallback coordinates
     // when the evaluator returns true, rather than blocking expression edits.
-    if (!expressionRule) {
+    if (!expressionRule && !bundledRule) {
       for (const name of ['x', 'y']) {
         if (!Number.isFinite(r[name]) || r[name] < 0)
           issues.push([
@@ -363,6 +381,8 @@ async function pickRulePosition(node) {
     const rules = [...store.children].map((ruleNode) => {
       const rule = {
         id: ruleNode.dataset.id,
+        builtinId: ruleNode.dataset.builtinId || undefined,
+        name: ruleNode.dataset.name || undefined,
         _open: !!ruleNode.querySelector('details')?.open,
       };
       for (const field of ruleNode.querySelectorAll('[name]')) {
@@ -399,11 +419,13 @@ function showLastSweep(sweep) {
   const label = $('#last-sweep');
   if (!sweep) return;
   const source =
-    sweep.type === 'expression'
-      ? 'JS rule'
-      : sweep.type === 'text'
-        ? 'Text rule'
-        : 'Manual';
+    sweep.type === 'bundled'
+      ? 'Built-in rule'
+      : sweep.type === 'expression'
+        ? 'JS rule'
+        : sweep.type === 'text'
+          ? 'Text rule'
+          : 'Manual';
   $('.run-history').hidden = false;
   label.textContent = `Last click: ${source} · center (${sweep.center.x}, ${sweep.center.y}) · first click (${sweep.firstPoint.x}, ${sweep.firstPoint.y}) · v${sweep.version}`;
   label.title = sweep.ruleId ? `Rule ${sweep.ruleId}` : 'Manual test panel';

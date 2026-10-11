@@ -48,7 +48,10 @@
     if (
       window === window.top &&
       rules.some(
-        (r) => r.enabled && r.ruleType === 'expression' && r.expression?.trim(),
+        (r) =>
+          r.enabled &&
+          (r.ruleType === 'bundled' ||
+            (r.ruleType === 'expression' && r.expression?.trim())),
       )
     ) {
       chrome.runtime
@@ -59,7 +62,9 @@
       rules
         .filter(
           (r) =>
-            r.enabled && r.ruleType !== 'expression' && r.textMatch?.trim(),
+            r.enabled &&
+            !['expression', 'bundled'].includes(r.ruleType) &&
+            r.textMatch?.trim(),
         )
         .map((r) => r.textMatch.trim().toLowerCase()),
     );

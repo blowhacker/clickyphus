@@ -1,3 +1,31 @@
+/* global defaultRules */
+importScripts('bundled-rules.js');
+
+// Defaults are copied into local storage once; later edits belong to the user.
+async function installDefaultRules(details) {
+  if (details.reason !== 'install') return;
+  const defaults = defaultRules();
+  const existing = await chrome.storage.local.get([
+    'autoRules',
+    'autoRule',
+    'rulesDraft',
+  ]);
+  // An empty list is intentional too. Never restore rules the user removed.
+  if (
+    existing.autoRules !== undefined ||
+    existing.autoRule !== undefined ||
+    existing.rulesDraft != null
+  )
+    return;
+  await chrome.storage.local.set({ autoRules: defaults });
+}
+
+chrome.runtime.onInstalled.addListener((details) => {
+  installDefaultRules(details).catch((error) =>
+    console.warn('[clickyphus] default rule installation failed', error),
+  );
+});
+
 const queues = new Map();
 const pickingTabs = new Set();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -95,6 +123,28 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   getUserScriptsStatus().then(respond);
   return true;
 });
+
+async function evaluateBundledRule(tabId, documentId, ruleId) {
+  if (!ruleId) return false;
+  const [evaluation] = await chrome.scripting.executeScript({
+    target: { tabId, documentIds: [documentId] },
+    world: 'MAIN',
+    func: defaultRules,
+    args: [ruleId],
+    // Don't defer checks until all images finish loading.
+    injectImmediately: true,
+  });
+  if (evaluation?.documentId !== documentId) return false;
+  const value = evaluation.result;
+  if (value === true) return true;
+  return value &&
+    Number.isFinite(value.x) &&
+    Number.isFinite(value.y) &&
+    value.x >= 0 &&
+    value.y >= 0
+    ? { x: value.x, y: value.y }
+    : false;
+}
 
 async function evaluateUserRule(tabId, documentId, expression) {
   if (!chrome.userScripts?.execute) return false;
@@ -530,8 +580,8 @@ async function checkExpressionRules(sender) {
   for (const rule of autoRules) {
     if (
       !rule.enabled ||
-      rule.ruleType !== 'expression' ||
-      !rule.expression?.trim() ||
+      !['expression', 'bundled'].includes(rule.ruleType) ||
+      (rule.ruleType === 'expression' && !rule.expression?.trim()) ||
       !matchesRuleUrl(tab.url, rule.urlMatch)
     )
       continue;
@@ -549,11 +599,14 @@ async function checkExpressionRules(sender) {
           (await chrome.tabs.get(tabId)).url !== expectedUrl
         )
           return false;
-        const value = await evaluateUserRule(
-          tabId,
-          sender.documentId,
-          rule.expression,
-        );
+        const value =
+          rule.ruleType === 'bundled'
+            ? await evaluateBundledRule(
+                tabId,
+                sender.documentId,
+                rule.builtinId,
+              )
+            : await evaluateUserRule(tabId, sender.documentId, rule.expression);
         if (
           !value ||
           autoFired.get(tabId) !== fired ||
@@ -577,7 +630,7 @@ async function checkExpressionRules(sender) {
         0,
         rule.visualize,
         shouldContinue,
-        { type: 'expression', ruleId: rule.id },
+        { type: rule.ruleType, ruleId: rule.id },
       );
       if (
         result.stopped &&
@@ -611,7 +664,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     if (!tab.url) return;
     for (const rule of autoRules) {
       if (
-        rule.ruleType === 'expression' ||
+        ['expression', 'bundled'].includes(rule.ruleType) ||
         !rule.enabled ||
         !rule.textMatch?.trim()
       )

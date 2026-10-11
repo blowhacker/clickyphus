@@ -5,10 +5,13 @@ import json
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
+from bundle_rules import bundle_rules
+
 
 def main():
     root = Path(__file__).resolve().parent.parent
     extension = root / "extension"
+    bundle_rules(extension / "default-rules.js", extension / "rule-evaluator.js", extension / "bundled-rules.js")
     manifest = json.loads((extension / "manifest.json").read_text())
     output = root / "dist" / f"clickyphus-{manifest['version']}.zip"
     output.parent.mkdir(exist_ok=True)

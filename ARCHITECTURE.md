@@ -37,6 +37,8 @@ The popup shows only the selected condition type and preserves the other type's 
 
 ## Automatic rules
 
+On the runtime `onInstalled` event with reason `install`, the worker reads the metadata from bundled `default-rules.js` and seeds `autoRules` only if no current or legacy rules or draft exist. Updates and reloads skip seeding, including when the user has intentionally saved an empty list. The top-level RULES array is editable in source, with a commented template for additional rules, and uses the same schema as popup-saved rules.
+
 Every rule includes an enabled flag, URL substring, condition, viewport coordinates, grid size, spacing, click delay, and marker preference. URL matching is case insensitive and uses the top-level tab URL. A blank URL filter (including whitespace) or `*` matches all supported pages; other values are literal substrings, not wildcard patterns. Rules without a `ruleType` retain the original text behavior.
 
 ### Page text
@@ -46,6 +48,10 @@ The watcher loads saved rules into each permitted frame. It scans DOM text, incl
 Checks start once the DOM is ready, without waiting for images or other resources. Startup checks run after 450 ms, 1 second, and 2 seconds; false JS results remain eligible for retry. DOM changes and the window load event schedule a scan after 450 ms, and a timer continues scanning every 2.5 seconds. A matching phrase produces an `AUTO_TEXT_FOUND` message; the worker checks the saved rule, URL, and tab focus before scheduling clicks. The watcher coalesces in-flight notifications but retries matching text on subsequent scans; a skipped or failed first notification does not permanently suppress it. The worker prevents duplicate successful sweeps. Navigation completion and URL changes request fresh checks, and restored pages restart their early checks. Failures before any mouse press leave rules eligible for retry.
 
 Before each automatic click, the worker asks the originating document or frame whether the phrase is still present. Navigation, a missing frame, a failed recheck, or disappearing text stops the sequence.
+
+### Built-in JavaScript
+
+`default-rules.js` is a plain `RULES` array (also supporting `RULES.push`). `rule-evaluator.js` handles metadata and condition result normalization. The build combines them into the generated `bundled-rules.js` function, imported by the worker and injected into MAIN through `chrome.scripting.executeScript`, targeting the originating document ID with immediate injection. All bundled functions and helpers share the config’s scope. The generated file is extension-owned code, so it needs the scripting permission but no Allow User Scripts toggle. Run the build or `prepare:rules` after changing config, then reload the extension. Built-in settings are editable in the popup, while condition code remains in source. Built-in checks use the same focus, retries, preflight, and click guards as custom JS checks.
 
 ### JavaScript expression
 

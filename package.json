@@ -8,7 +8,8 @@
     "format": "prettier --write .",
     "check": "npm run lint && npm run format:check",
     "build": "python3 scripts/package.py",
-    "test:browser": "node tests/user-scripts.browser.cjs"
+    "test:browser": "node tests/user-scripts.browser.cjs",
+    "prepare:rules": "python3 scripts/bundle_rules.py"
   },
   "engines": {
     "node": "^20.19.0 || ^22.13.0 || >=24"

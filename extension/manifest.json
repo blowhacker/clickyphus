@@ -1,10 +1,17 @@
 {
   "manifest_version": 3,
   "name": "Clickyphus",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "minimum_chrome_version": "138",
   "description": "Let the mouse do the work. Manual clicks and automatic grids triggered by page text or JavaScript rules.",
-  "permissions": ["debugger", "activeTab", "storage", "tabs", "userScripts"],
+  "permissions": [
+    "debugger",
+    "activeTab",
+    "storage",
+    "tabs",
+    "userScripts",
+    "scripting"
+  ],
   "background": {
     "service_worker": "background.js"
   },

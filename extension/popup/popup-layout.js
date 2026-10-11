@@ -50,18 +50,26 @@
         rule.querySelector(`[name="${name}"]`)?.value?.trim() || '';
       const urlMatch = get('urlMatch');
       const url = !urlMatch || urlMatch === '*' ? 'All URLs' : urlMatch;
-      const expression = get('ruleType') === 'expression';
+      const bundled = get('ruleType') === 'bundled';
+      const expression = bundled || get('ruleType') === 'expression';
       const phrase = expression
         ? 'Computed or saved center'
         : get('textMatch') || 'Add matching text';
-      kind.textContent = !checkbox.checked ? 'OFF' : expression ? 'JS' : 'TEXT';
+      kind.textContent = !checkbox.checked
+        ? 'OFF'
+        : bundled
+          ? 'BUILT-IN'
+          : expression
+            ? 'JS'
+            : 'TEXT';
       const size = get('gridSize') || '?';
       const x = get('x') || '?';
       const y = get('y') || '?';
-      heading.textContent = url;
+      heading.textContent =
+        bundled && rule.dataset.name ? rule.dataset.name : url;
       const pattern = size === '1' ? 'Single click' : `${size}×${size}`;
       meta.textContent = expression
-        ? `${phrase} · ${pattern}`
+        ? `${bundled ? url : phrase} · ${pattern}`
         : `${phrase} · ${pattern} at ${x}, ${y}`;
       checkbox.setAttribute(
         'aria-label',
