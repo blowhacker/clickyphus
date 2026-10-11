@@ -1,3 +1,52 @@
+/* global document, window */
+// Serialized for execution in the page; this function cannot use worker closures.
+function drawClickMarker(x, y, index, total, clicked) {
+  const id = '__clickyphus_visualizer__';
+  let host = document.getElementById(id);
+  if (!host) {
+    host = document.createElement('div');
+    host.id = id;
+    host.style.cssText =
+      'position:fixed;inset:0;pointer-events:none;z-index:2147483647;overflow:hidden';
+    (document.documentElement || document.body).appendChild(host);
+  }
+  const dot = document.createElement('div');
+  dot.style.cssText = `position:absolute;left:${x}px;top:${y}px;transform:translate(-50%,-50%);width:24px;height:24px;border:3px solid #ff214f;border-radius:50%;background:rgba(255,33,79,.22);box-shadow:0 0 0 2px white,0 0 12px #ff214f;box-sizing:border-box`;
+  const h = document.createElement('div');
+  h.style.cssText = `position:absolute;left:${x - 16}px;top:${y}px;width:32px;border-top:1px solid #ff214f`;
+  const v = document.createElement('div');
+  v.style.cssText = `position:absolute;left:${x}px;top:${y - 16}px;height:32px;border-left:1px solid #ff214f`;
+  const label = document.createElement('div');
+  label.textContent = `${index}/${total} (${x},${y})`;
+  label.style.cssText = `position:absolute;left:${x + 18}px;top:${y + 13}px;background:#151515;color:#fff;border:1px solid #ff214f;padding:3px 6px;border-radius:4px;white-space:nowrap;font:12px monospace`;
+  host.replaceChildren(dot, h, v, label);
+  if (clicked) {
+    label.textContent = 'Clicked · ' + label.textContent;
+    dot.style.background = '#ff214f';
+    dot.animate(
+      [
+        { transform: 'translate(-50%,-50%) scale(.65)' },
+        { transform: 'translate(-50%,-50%) scale(1.2)' },
+        { transform: 'translate(-50%,-50%) scale(1)' },
+      ],
+      { duration: 220, easing: 'ease-out' },
+    );
+    const ripple = document.createElement('div');
+    ripple.style.cssText = dot.style.cssText;
+    ripple.style.background = 'transparent';
+    host.append(ripple);
+    ripple.animate(
+      [
+        { transform: 'translate(-50%,-50%) scale(1)', opacity: 1 },
+        { transform: 'translate(-50%,-50%) scale(2.5)', opacity: 0 },
+      ],
+      { duration: 320, easing: 'ease-out', fill: 'forwards' },
+    );
+  }
+  clearTimeout(window.__coordinateClickMarkerTimer);
+  window.__coordinateClickMarkerTimer = setTimeout(() => host.remove(), 1600);
+}
+
 /* exported createGridExecutor */
 // Owns grid geometry, per-tab serialization, markers, and browser input.
 // The caller supplies focus/continuation checks and optional execution history.
@@ -40,45 +89,7 @@ function createGridExecutor({ isFocusedTab }) {
   // Overlay lives in the top-level document, above nested cross-origin frames.
   // pointer-events:none prevents the marker itself from swallowing clicks.
   async function showMarker(target, x, y, index, total, clicked = false) {
-    const source = `(() => {
-    const id = '__clickyphus_visualizer__';
-    let host = document.getElementById(id);
-    if (!host) {
-      host = document.createElement('div');
-      host.id = id;
-      host.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483647;overflow:hidden';
-      (document.documentElement || document.body).appendChild(host);
-    }
-    const dot = document.createElement('div');
-    dot.style.cssText = 'position:absolute;left:${x}px;top:${y}px;transform:translate(-50%,-50%);width:24px;height:24px;border:3px solid #ff214f;border-radius:50%;background:rgba(255,33,79,.22);box-shadow:0 0 0 2px white,0 0 12px #ff214f;box-sizing:border-box';
-    const h = document.createElement('div');
-    h.style.cssText = 'position:absolute;left:${x - 16}px;top:${y}px;width:32px;border-top:1px solid #ff214f';
-    const v = document.createElement('div');
-    v.style.cssText = 'position:absolute;left:${x}px;top:${y - 16}px;height:32px;border-left:1px solid #ff214f';
-    const label = document.createElement('div');
-    label.textContent = '${index}/${total} (${x},${y})';
-    label.style.cssText = 'position:absolute;left:${x + 18}px;top:${y + 13}px;background:#151515;color:#fff;border:1px solid #ff214f;padding:3px 6px;border-radius:4px;white-space:nowrap;font:12px monospace';
-    host.replaceChildren(dot,h,v,label);
-    if (${clicked}) {
-      label.textContent = 'Clicked · ' + label.textContent;
-      dot.style.background = '#ff214f';
-      dot.animate([
-        { transform: 'translate(-50%,-50%) scale(.65)' },
-        { transform: 'translate(-50%,-50%) scale(1.2)' },
-        { transform: 'translate(-50%,-50%) scale(1)' }
-      ], { duration: 220, easing: 'ease-out' });
-      const ripple = document.createElement('div');
-      ripple.style.cssText = dot.style.cssText;
-      ripple.style.background = 'transparent';
-      host.append(ripple);
-      ripple.animate([
-        { transform: 'translate(-50%,-50%) scale(1)', opacity: 1 },
-        { transform: 'translate(-50%,-50%) scale(2.5)', opacity: 0 }
-      ], { duration: 320, easing: 'ease-out', fill: 'forwards' });
-    }
-    clearTimeout(window.__coordinateClickMarkerTimer);
-    window.__coordinateClickMarkerTimer = setTimeout(() => host.remove(), 1600);
-  })()`;
+    const source = `(${drawClickMarker.toString()})(...${JSON.stringify([x, y, index, total, clicked])})`;
     try {
       await chrome.debugger.sendCommand(target, 'Runtime.evaluate', {
         expression: source,

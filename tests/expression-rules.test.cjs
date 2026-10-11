@@ -211,7 +211,28 @@ test('DOM-based return body uses returned coordinates for input and markers', as
   );
   assert.deepEqual(presses, [{ x: 55, y: 110 }]);
   assert.ok(markers.length > 0);
-  assert.ok(markers.every((marker) => marker.includes('left:55px;top:110px')));
+  for (const marker of markers) {
+    let children;
+    const host = {
+      replaceChildren: (...nodes) => {
+        children = nodes;
+      },
+      append() {},
+      remove() {},
+    };
+    const markerPage = {
+      document: {
+        getElementById: () => host,
+        createElement: () => ({ style: {}, animate() {} }),
+      },
+      window: {},
+      clearTimeout() {},
+      setTimeout() {},
+    };
+    vm.runInNewContext(marker, markerPage);
+    assert.ok(children[0].style.cssText.includes('left:55px;top:110px'));
+    assert.ok(children[3].textContent.includes('(55,110)'));
+  }
   const center = logs.find(([message]) =>
     message.includes('resolved sweep center'),
   )[1];

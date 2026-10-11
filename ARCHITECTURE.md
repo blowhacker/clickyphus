@@ -96,7 +96,7 @@ The executor validates the click settings, builds a square grid around the reque
 
 For each point, the executor checks focus and any automatic condition, optionally draws a marker, and sends mouse move, press, and release commands using `Input.dispatchMouseEvent`. This sends browser input rather than calling an element's DOM `click()` method. Coordinates are relative to the top-level viewport, allowing clicks over nested frames without resolving a target element.
 
-Markers are extension-owned page code passed as a string to the debugger’s `Runtime.evaluate`: the service worker has no page DOM. Rule conditions use the separate evaluator and do not attach the debugger when they fail.
+Markers are drawn by the self-contained `drawClickMarker` function, serialized with JSON arguments and passed as a string to the debugger’s `Runtime.evaluate`: the service worker has no page DOM. Rule conditions use the separate evaluator and do not attach the debugger when they fail.
 
 The debugger is detached in a `finally` block after an attached job finishes or fails. Manual jobs have no rule-condition guard, but still stop when the target loses focus.
 
