@@ -154,7 +154,7 @@ const path = require('node:path'),
     assert.deepEqual(await worker.evaluate(() => debuggerEvents), []);
     await worker.evaluate(
       (rule) => chrome.storage.local.set({ autoRules: [rule] }),
-      { ...initialRules[0], enabled: true, urlMatch: '', visualize: false },
+      { ...initialRules[0], enabled: true, urlMatch: '', visualize: true },
     );
     await page.goto(base + 'bundled');
     await page.bringToFront();
@@ -167,6 +167,17 @@ const path = require('node:path'),
       document.body.append(button);
     });
     await page.waitForFunction(() => window.clicks.length === 1);
+    const marker = page.locator('#__clickyphus_visualizer__');
+    await marker.waitFor();
+    assert.equal(await marker.locator('svg').count(), 1);
+    assert.equal(
+      await marker.locator('svg g').getAttribute('transform'),
+      'translate(108 0) scale(-1 1)',
+    );
+    assert.equal(
+      await marker.evaluate((el) => getComputedStyle(el).pointerEvents),
+      'none',
+    );
     await page.waitForTimeout(500);
     assert.deepEqual(await page.evaluate(() => window.clicks), [
       { x: 150, y: 130, trusted: true },

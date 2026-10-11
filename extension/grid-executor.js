@@ -18,30 +18,99 @@ function drawClickMarker(x, y, index, total, clicked) {
   v.style.cssText = `position:absolute;left:${x}px;top:${y - 16}px;height:32px;border-left:1px solid #ff214f`;
   const label = document.createElement('div');
   label.textContent = `${index}/${total} (${x},${y})`;
-  label.style.cssText = `position:absolute;left:${x + 18}px;top:${y + 13}px;background:#151515;color:#fff;border:1px solid #ff214f;padding:3px 6px;border-radius:4px;white-space:nowrap;font:12px monospace`;
+  label.style.cssText = `position:absolute;left:${x - 18}px;top:${y + 13}px;transform:translateX(-100%);background:#151515;color:#fff;border:1px solid #ff214f;padding:3px 6px;border-radius:4px;white-space:nowrap;font:12px monospace`;
   host.replaceChildren(dot, h, v, label);
+  // Anchor the muzzle to the right of the target; mirror only the SVG artwork.
+  const muzzleX = Math.max(x + 32, Math.min(x + 160, window.innerWidth - 85));
+  const gun = document.createElement('div');
+  gun.style.cssText = `position:absolute;left:${muzzleX}px;top:${y}px;transform-origin:0 0;pointer-events:none;filter:drop-shadow(0 3px 6px #0008)`;
+  const ns = 'http://www.w3.org/2000/svg';
+  function svgElement(tag, attributes) {
+    const element = document.createElementNS(ns, tag);
+    for (const [name, value] of Object.entries(attributes))
+      element.setAttribute(name, value);
+    return element;
+  }
+  const svg = svgElement('svg', {
+    viewBox: '0 0 108 74',
+    width: '108',
+    height: '74',
+    'aria-hidden': 'true',
+  });
+  svg.style.cssText = 'position:absolute;left:-23px;top:-18px;overflow:visible';
+  const artwork = svgElement('g', {
+    transform: 'translate(108 0) scale(-1 1)',
+  });
+  artwork.append(
+    svgElement('path', {
+      d: 'M14 18 Q12 10 22 10 H82 V29 H48 L36 63 H18 L27 28 H14Z',
+      fill: '#678f73',
+      stroke: '#c9f6b0',
+      'stroke-width': '2.5',
+      'stroke-linejoin': 'round',
+    }),
+    svgElement('path', { d: 'M15 10 H85 V20 H15Z', fill: '#d2e5d0' }),
+    svgElement('path', { d: 'M27 36 L21 57 H32 L40 36Z', fill: '#243d2d' }),
+    svgElement('path', {
+      d: 'M45 30 Q55 40 43 44',
+      fill: 'none',
+      stroke: '#c9f6b0',
+      'stroke-width': '3',
+    }),
+    svgElement('path', {
+      d: 'M21 14 H70',
+      stroke: '#56755d',
+      'stroke-width': '3',
+    }),
+  );
+  const flash = svgElement('path', {
+    d: 'M85 13 L98 6 L94 14 L108 17 L95 21 L99 30 L85 23Z',
+    fill: '#efffc6',
+    opacity: '0',
+  });
+  artwork.append(flash);
+  svg.append(artwork);
+  gun.append(svg);
+  host.append(gun);
+  const reducedMotion = window.matchMedia(
+    '(prefers-reduced-motion: reduce)',
+  ).matches;
   if (clicked) {
     label.textContent = 'Clicked · ' + label.textContent;
     dot.style.background = '#ff214f';
-    dot.animate(
-      [
-        { transform: 'translate(-50%,-50%) scale(.65)' },
-        { transform: 'translate(-50%,-50%) scale(1.2)' },
-        { transform: 'translate(-50%,-50%) scale(1)' },
-      ],
-      { duration: 220, easing: 'ease-out' },
-    );
-    const ripple = document.createElement('div');
-    ripple.style.cssText = dot.style.cssText;
-    ripple.style.background = 'transparent';
-    host.append(ripple);
-    ripple.animate(
-      [
-        { transform: 'translate(-50%,-50%) scale(1)', opacity: 1 },
-        { transform: 'translate(-50%,-50%) scale(2.5)', opacity: 0 },
-      ],
-      { duration: 320, easing: 'ease-out', fill: 'forwards' },
-    );
+    if (!reducedMotion) {
+      gun.animate(
+        [
+          { transform: 'translateX(0) rotate(0deg)' },
+          { transform: 'translateX(9px) rotate(5deg)', offset: 0.2 },
+          { transform: 'translateX(0) rotate(0deg)' },
+        ],
+        { duration: 200, easing: 'ease-out' },
+      );
+      flash.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 100 });
+      const bullet = document.createElement('div');
+      bullet.style.cssText = `position:absolute;left:${muzzleX}px;top:${y - 2}px;width:24px;height:4px;background:#edffc6;box-shadow:0 0 12px #bcff80;border-radius:5px`;
+      host.append(bullet);
+      bullet.animate(
+        [
+          { transform: 'translateX(-24px)', opacity: 1 },
+          { transform: `translateX(${x - muzzleX}px)`, opacity: 0 },
+        ],
+        { duration: 120, easing: 'ease-out', fill: 'forwards' },
+      );
+      const ripple = document.createElement('div');
+      ripple.style.cssText = dot.style.cssText;
+      ripple.style.background = 'transparent';
+      ripple.style.borderColor = '#edffc6';
+      host.append(ripple);
+      ripple.animate(
+        [
+          { transform: 'translate(-50%,-50%) scale(.65)', opacity: 1 },
+          { transform: 'translate(-50%,-50%) scale(2.5)', opacity: 0 },
+        ],
+        { duration: 280, delay: 100, easing: 'ease-out', fill: 'forwards' },
+      );
+    }
   }
   clearTimeout(window.__coordinateClickMarkerTimer);
   window.__coordinateClickMarkerTimer = setTimeout(() => host.remove(), 1600);
