@@ -6,6 +6,7 @@ const vm = require('node:vm');
 
 function markerPage(reducedMotion = false) {
   const host = {
+    style: { cssText: 'position:fixed;inset:0;pointer-events:none' },
     children: [],
     replaceChildren(...nodes) {
       this.children = nodes;
@@ -14,20 +15,29 @@ function markerPage(reducedMotion = false) {
       this.children.push(...nodes);
     },
   };
+  const layers = new Map();
   function element() {
     return {
       style: {},
-      append() {},
+      children: [],
+      append(...nodes) {
+        this.children.push(...nodes);
+      },
       setAttribute() {},
       animations: [],
-      animate(frames) {
+      animate(frames, options) {
         this.animations.push(frames);
+        this.options = options;
+        return { finished: new Promise(() => {}) };
       },
+      remove() {},
     };
   }
   const context = vm.createContext({
     document: {
-      getElementById: () => host,
+      getElementById: (id) =>
+        id === '__clickyphus_visualizer__' ? host : layers.get(id),
+      documentElement: { appendChild: (el) => layers.set(el.id, el) },
       createElement: element,
       createElementNS: element,
     },
@@ -42,7 +52,11 @@ function markerPage(reducedMotion = false) {
     ),
     context,
   );
-  return { host, draw: context.drawClickMarker };
+  return {
+    host,
+    effects: () => layers.get('__clickyphus_impacts__'),
+    draw: context.drawClickMarker,
+  };
 }
 
 function pose(gun) {
@@ -55,7 +69,7 @@ function pose(gun) {
 }
 
 test('progressive shots keep aim and fire aligned, reverse at ±30°, and hit the exact target', () => {
-  const { host, draw } = markerPage();
+  const { host, draw, effects } = markerPage();
   const expected = [-30, -20, -10, 0, 10, 20, 30, 20, 10, 0, -10, -20, -30];
   for (const x of [350, 865]) {
     for (let i = 0; i < expected.length; i++) {
@@ -66,7 +80,7 @@ test('progressive shots keep aim and fire aligned, reverse at ±30°, and hit th
       assert.deepEqual(fired, aim);
       assert.equal(fired.angle, expected[i]);
       assert.ok(fired.x > x);
-      const bullet = host.children[5];
+      const bullet = effects().children.at(-3);
       const end = bullet.animations[0][1].transform;
       const distance = -Number(end.match(/translateX\(([\d.-]+)px\)/)[1]);
       const radians = (fired.angle * Math.PI) / 180;
@@ -84,4 +98,22 @@ test('reduced motion preserves progressive poses without recoil or projectiles',
   assert.equal(pose(host.children[4]).angle, 30);
   assert.equal(host.children.length, 5);
   assert.equal(host.children[4].animations.length, 0);
+});
+
+test('impact waits for bullet arrival and survives the next aiming marker', () => {
+  const { host, effects, draw } = markerPage();
+  draw(350, 280, 1, 9, false);
+  assert.ok(
+    host.children[0].style.cssText.includes('background:transparent;opacity:0'),
+  );
+  draw(350, 280, 1, 9, true);
+  const [bullet, ring, burst] = effects().children;
+  assert.equal(bullet.options.duration, 120);
+  assert.equal(ring.options.delay, bullet.options.duration);
+  assert.equal(burst.options.delay, bullet.options.duration);
+  assert.equal(ring.style.opacity, '0');
+  assert.ok(burst.style.cssText.includes('opacity:0'));
+  draw(360, 280, 2, 9, false);
+  assert.deepEqual(effects().children, [bullet, ring, burst]);
+  assert.equal(host.children.length, 5);
 });

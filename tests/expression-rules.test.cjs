@@ -223,12 +223,22 @@ test('DOM-based return body uses returned coordinates for input and markers', as
     const markerPage = {
       document: {
         getElementById: () => host,
-        createElement: () => ({ style: {}, animate() {}, append() {} }),
+        createElement: () => ({
+          style: {},
+          animate() {
+            return { finished: Promise.resolve() };
+          },
+          remove() {},
+          append() {},
+        }),
         createElementNS: () => ({
           style: {},
           setAttribute() {},
           append() {},
-          animate() {},
+          animate() {
+            return { finished: Promise.resolve() };
+          },
+          remove() {},
         }),
       },
       window: { innerWidth: 1000, matchMedia: () => ({ matches: false }) },

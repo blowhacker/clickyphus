@@ -11,7 +11,7 @@ function drawClickMarker(x, y, index, total, clicked) {
     (document.documentElement || document.body).appendChild(host);
   }
   const dot = document.createElement('div');
-  dot.style.cssText = `position:absolute;left:${x}px;top:${y}px;transform:translate(-50%,-50%);width:24px;height:24px;border:3px solid #ff214f;border-radius:50%;background:rgba(255,33,79,.22);box-shadow:0 0 0 2px white,0 0 12px #ff214f;box-sizing:border-box`;
+  dot.style.cssText = `position:absolute;left:${x}px;top:${y}px;transform:translate(-50%,-50%);width:24px;height:24px;border:3px solid #ff214f;border-radius:50%;background:transparent;opacity:0;box-sizing:border-box`;
   const h = document.createElement('div');
   h.style.cssText = `position:absolute;left:${x - 16}px;top:${y}px;width:32px;border-top:1px solid #ff214f`;
   const v = document.createElement('div');
@@ -86,8 +86,27 @@ function drawClickMarker(x, y, index, total, clicked) {
   ).matches;
   if (clicked) {
     label.textContent = 'Clicked · ' + label.textContent;
-    dot.style.background = '#ff214f';
+    if (reducedMotion) {
+      dot.style.opacity = '1';
+      dot.style.background = '#ff214f';
+    }
     if (!reducedMotion) {
+      // Flights and impacts survive the next aiming marker in a fast grid.
+      const effectsId = '__clickyphus_impacts__';
+      let effects = document.getElementById(effectsId);
+      if (!effects) {
+        effects = document.createElement('div');
+        effects.id = effectsId;
+        effects.style.cssText = host.style.cssText;
+        (document.documentElement || document.body).appendChild(effects);
+      }
+      function animateEffect(element, frames, options) {
+        effects.append(element);
+        element.animate(frames, options).finished.then(
+          () => element.remove(),
+          () => element.remove(),
+        );
+      }
       gun.animate(
         [
           { transform: rotation },
@@ -102,11 +121,11 @@ function drawClickMarker(x, y, index, total, clicked) {
       flash.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 100 });
       const bullet = document.createElement('div');
       bullet.style.cssText = `position:absolute;left:${muzzleX}px;top:${muzzleY - 2}px;transform-origin:0 50%;width:24px;height:4px;background:#edffc6;box-shadow:0 0 12px #bcff80;border-radius:5px`;
-      host.append(bullet);
-      bullet.animate(
+      animateEffect(
+        bullet,
         [
           { transform: `${rotation} translateX(-24px)`, opacity: 1 },
-          { transform: `${rotation} translateX(${-distance}px)`, opacity: 0 },
+          { transform: `${rotation} translateX(${-distance}px)`, opacity: 1 },
         ],
         { duration: 120, easing: 'ease-out', fill: 'forwards' },
       );
@@ -114,14 +133,51 @@ function drawClickMarker(x, y, index, total, clicked) {
       ripple.style.cssText = dot.style.cssText;
       ripple.style.background = 'transparent';
       ripple.style.borderColor = '#edffc6';
-      host.append(ripple);
-      ripple.animate(
+      ripple.style.opacity = '0';
+      animateEffect(
+        ripple,
         [
           { transform: 'translate(-50%,-50%) scale(.65)', opacity: 1 },
           { transform: 'translate(-50%,-50%) scale(2.5)', opacity: 0 },
         ],
-        { duration: 280, delay: 100, easing: 'ease-out', fill: 'forwards' },
+        { duration: 280, delay: 120, easing: 'ease-out', fill: 'forwards' },
       );
+      const burst = svgElement('svg', {
+        viewBox: '-32 -32 64 64',
+        width: '64',
+        height: '64',
+        'aria-hidden': 'true',
+      });
+      burst.style.cssText = `position:absolute;left:${x}px;top:${y}px;transform:translate(-50%,-50%);opacity:0;overflow:visible`;
+      burst.append(
+        svgElement('path', {
+          d: 'M0 -25 L5 -9 L18 -18 L10 -4 L27 0 L10 5 L18 19 L5 10 L0 27 L-5 10 L-20 18 L-10 4 L-27 0 L-10 -5 L-18 -19 L-5 -10Z',
+          fill: '#edffc6',
+          stroke: '#ffb35c',
+          'stroke-width': '2',
+        }),
+      );
+      animateEffect(
+        burst,
+        [
+          {
+            transform: 'translate(-50%,-50%) scale(.3) rotate(-10deg)',
+            opacity: 1,
+          },
+          {
+            transform: 'translate(-50%,-50%) scale(1) rotate(5deg)',
+            opacity: 1,
+            offset: 0.3,
+          },
+          {
+            transform: 'translate(-50%,-50%) scale(1.35) rotate(12deg)',
+            opacity: 0,
+          },
+        ],
+        { duration: 240, delay: 120, easing: 'ease-out', fill: 'forwards' },
+      );
+      clearTimeout(window.__clickyphusImpactTimer);
+      window.__clickyphusImpactTimer = setTimeout(() => effects.remove(), 1600);
     }
   }
   clearTimeout(window.__coordinateClickMarkerTimer);
