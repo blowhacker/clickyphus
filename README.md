@@ -6,6 +6,15 @@
 
 A browser companion for repetitive work: a Chrome extension for manual coordinate clicks and automatic grid sweeps triggered by URL and page text or JavaScript expressions.
 
+## Installation
+
+```
+1. git clone https://github.com/blowhacker/clickyphus.git
+2. goto chrome://extensions/
+    - enable developer mode
+    - load unpacked from extensions dir
+```
+
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the components, rule evaluation, click execution, and storage flows.
 
 ## Development
