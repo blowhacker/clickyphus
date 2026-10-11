@@ -1,0 +1,100 @@
+# Architecture
+
+Coordinate Click Companion is a Chrome Manifest V3 extension. It runs manual coordinate clicks and automatic click grids when a page meets a saved condition. There is no backend: configuration stays in Chrome local storage, and execution happens inside the browser.
+
+## Components
+
+| Component                         | Responsibility                                                                                                         |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `extension/manifest.json`         | Registers the popup, background service worker, content scripts, and browser permissions.                              |
+| `extension/popup/popup.html`      | Rule editor and manual click controls.                                                                                 |
+| `extension/popup/popup.js`        | Loads and saves rules, validates input, starts manual clicks, and preserves drafts while picking coordinates.          |
+| `extension/popup/popup-layout.js` | Presents each rule as an expandable row with a compact summary.                                                        |
+| `extension/content/watcher.js`    | Watches page text in permitted frames and requests expression checks from the top-level frame.                         |
+| `extension/content/picker.js`     | Displays a coordinate-selection overlay in the top-level page.                                                         |
+| `extension/background.js`         | Coordinates messages, checks tab focus and rule conditions, serializes click jobs, and controls Chrome's debugger API. |
+| `scripts/package.py`              | Packages the extension directory into a versioned ZIP.                                                                 |
+
+```mermaid
+flowchart TD
+    Popup[Popup: rules and manual controls] <-->|Read and write| Storage[(Chrome local storage)]
+    Storage --> Watcher[Watcher in each permitted frame]
+    Popup -->|Manual click or pick request| Worker[Background service worker]
+    Watcher -->|Text match or expression check request| Worker
+    Worker -->|Live text recheck| Watcher
+    Worker -->|Start picker| Picker[Top-level coordinate picker]
+    Picker -->|Selected coordinates| Worker
+    Worker -->|Save picked draft| Storage
+    Worker --> Debugger[Chrome debugger / DevTools Protocol]
+    Debugger -->|Evaluate expressions, show markers, dispatch mouse input| Page[Target page]
+```
+
+## Automatic rules
+
+Every rule includes an enabled flag, URL substring, condition, viewport coordinates, grid size, spacing, click delay, and marker preference. URL matching is case insensitive and uses the top-level tab URL. A blank URL filter (including whitespace) or `*` matches all supported pages; other values are literal substrings, not wildcard patterns. Rules without a `ruleType` retain the original text behavior.
+
+### Page text
+
+The watcher loads saved rules into each permitted frame. It scans DOM text, including open shadow roots, while excluding script, style, noscript, and template content. Text matching is case insensitive and does not require the text to be visible.
+
+DOM changes schedule a scan after 450 ms, and a timer scans every 2.5 seconds. A matching phrase produces an `AUTO_TEXT_FOUND` message; the worker checks the saved rule, URL, and tab focus before scheduling clicks. The watcher suppresses repeat notifications for an already reported phrase and frame URL until rules change or a focus recheck clears that state.
+
+Before each automatic click, the worker asks the originating document or frame whether the phrase is still present. Navigation, a missing frame, a failed recheck, or disappearing text stops the sequence.
+
+### JavaScript expression
+
+When expression rules are enabled, the top-level watcher sends `CHECK_EXPRESSION_RULES` during scans. The worker selects enabled rules matching the URL and evaluates their expressions through DevTools Protocol `Runtime.evaluate` while attached to the tab.
+
+Expressions run in the top-level page context, with access to its DOM and JavaScript globals. They synchronously return `true` for saved coordinates, `{ x, y }` for a computed grid center, or `false` to skip clicks. Uppercase `{ X, Y }` is also accepted. Coordinates must be finite nonnegative numbers. Expressions and function bodies with `return` are supported; other results, promises, and errors do not trigger clicks. Evaluation has a 500 ms timeout. For example:
+
+```js
+document.querySelector('button.ready') !== null;
+```
+
+The grid center is resolved once at the start of a sweep and stays fixed for that sweep. The same expression is checked before every click, and again after showing a marker. A false result or error stops the sequence. Expressions should have no side effects because evaluation repeats. Expression checks are skipped while the tab already has a queued click job.
+
+### Repeat prevention and focus
+
+The worker tracks fired rule IDs per tab in memory. A rule normally runs once per top-level page load; loading or URL changes clear that tab's fired set. A stopped run that completed zero clicks can be retried. Closing the tab removes its tracking state.
+
+Clicks require the target tab to be active in a focused window, and coordinate picking temporarily prevents click execution in that tab. Activating a tab or focusing a window requests fresh watcher checks.
+
+The fired set and job queues are service-worker memory, rather than durable storage. Restarting the worker resets them, so the once-per-load tracking does not survive a worker restart.
+
+## Click execution
+
+Manual requests and automatic rules share `clickGrid`. Jobs run serially within each tab. Manual requests are acknowledged immediately, then wait 600 ms to let the popup close before execution.
+
+The worker validates the click settings, builds a square grid around the requested point, rounds coordinates to CSS pixels, and skips negative coordinates. Points are sorted by distance from the requested center. A grid size of one produces a single click.
+
+For each point, the worker checks focus and any automatic condition, optionally draws a marker, and sends mouse move, press, and release commands using `Input.dispatchMouseEvent`. This sends browser input rather than calling an element's DOM `click()` method. Coordinates are relative to the top-level viewport, allowing clicks over nested frames without resolving a target element.
+
+The debugger is detached in a `finally` block after an attached job finishes or fails. Manual jobs have no rule-condition guard, but still stop when the target loses focus.
+
+## Coordinate picking and popup lifetime
+
+The popup is short lived and closes when the user starts picking on the page. Before closing, it saves the current manual setup or unsaved rule fields and the intended picker target.
+
+The worker asks the top-level picker to show a modal overlay. The overlay captures the selection without activating the underlying page control and returns rounded `clientX` / `clientY` coordinates. Escape, page hiding, or a 60-second timeout cancels picking.
+
+The worker verifies the tab and draft target, updates the matching draft, and attempts to reopen the popup. If reopening fails, the saved draft is restored on the next popup open. Picking a rule position does not activate its unsaved edits; the user still saves the rules.
+
+## State and browser boundaries
+
+| State                                       | Location              | Purpose                                                                      |
+| ------------------------------------------- | --------------------- | ---------------------------------------------------------------------------- |
+| `autoRules`                                 | Chrome local storage  | Saved rule configuration shared by popup, watcher, and worker.               |
+| `autoRule`                                  | Chrome local storage  | Legacy single-rule data read by the popup and watcher.                       |
+| `manualDraft`, `rulesDraft`, `pickerTarget` | Chrome local storage  | Preserve editing and selection state across popup closure.                   |
+| Job queues, fired rule IDs, picking tabs    | Worker memory         | Coordinate execution and prevent repeated work during the worker's lifetime. |
+| Loaded rules and reported phrases           | Content-script memory | Scan each frame and suppress duplicate text notifications.                   |
+
+Content scripts run in Chrome's isolated extension context. User expressions run separately in the page context through the debugger API; the popup does not evaluate them. Text notifications carry the matching phrase rather than the page's full text.
+
+The manifest grants debugger, tab, active-tab, storage, and all-URL host access. Chrome-restricted pages cannot use the content scripts or picker, and debugger attachment failures abort jobs. The extension does not make application-level network requests or use a remote service.
+
+## Development and packaging
+
+Load `extension/` as an unpacked extension. After code changes, reload the extension and refresh open pages to replace their content scripts.
+
+`npm run check` runs ESLint and Prettier checks. `npm run build` invokes the Python packaging script, which reads the manifest version and writes `dist/coordinate-click-companion-<version>.zip`. The archive contains extension files only; repository documentation and development dependencies are excluded.
