@@ -1,10 +1,10 @@
 # Clickyphus
 
-**Let the mouse do the work.**
+## Demo 
+![CAPTCHA shooter demo](docs/assets/demo.gif)
 
+## The Greeks understood existential dread, and this extension does as well
 <img src="docs/assets/clickyphus.png" width="360" alt="Clickyphus hauling an enormous computer mouse uphill." />
-
-A browser companion for repetitive work: a Chrome extension for manual coordinate clicks and automatic grid sweeps triggered by URL and page text or JavaScript expressions.
 
 ## Installation
 
