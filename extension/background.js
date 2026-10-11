@@ -310,6 +310,7 @@ async function clickGrid(
     const target = { tabId };
     await chrome.debugger.attach(target, '1.3');
     let completed = 0;
+    let dispatched = 0;
     try {
       // Resolve an expression-provided center once; keep the grid fixed during
       // this sweep while continuing to recheck the condition before clicks.
@@ -449,6 +450,7 @@ async function clickGrid(
           'Input.dispatchMouseEvent',
           press,
         );
+        dispatched++;
         await sleep(80);
         await chrome.debugger.sendCommand(
           target,
@@ -468,7 +470,9 @@ async function clickGrid(
         completed,
         error,
       });
-      throw error;
+      throw Object.assign(new Error(error.message, { cause: error }), {
+        completed: dispatched,
+      });
     } finally {
       try {
         await chrome.debugger.detach(target);
@@ -509,6 +513,8 @@ const autoFired = new Map(); // tabId -> Set(ruleId)
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status === 'loading' || changeInfo.url)
     autoFired.delete(tabId);
+  if (changeInfo.url || changeInfo.status === 'complete')
+    recheckFocusedTab(tabId);
 });
 chrome.tabs.onRemoved.addListener((tabId) => autoFired.delete(tabId));
 
@@ -564,24 +570,30 @@ async function checkExpressionRules(sender) {
         return false;
       }
     };
-    const result = await clickGrid(
-      tabId,
-      rule.x,
-      rule.y,
-      getGridSize(rule),
-      rule.step,
-      rule.intervalMs,
-      0,
-      rule.visualize,
-      shouldContinue,
-      { type: 'expression', ruleId: rule.id },
-    );
-    if (
-      result.stopped &&
-      result.completed === 0 &&
-      autoFired.get(tabId) === fired
-    )
-      fired.delete(rule.id);
+    try {
+      const result = await clickGrid(
+        tabId,
+        rule.x,
+        rule.y,
+        getGridSize(rule),
+        rule.step,
+        rule.intervalMs,
+        0,
+        rule.visualize,
+        shouldContinue,
+        { type: 'expression', ruleId: rule.id },
+      );
+      if (
+        result.stopped &&
+        result.completed === 0 &&
+        autoFired.get(tabId) === fired
+      )
+        fired.delete(rule.id);
+    } catch (error) {
+      if (!(error.completed > 0) && autoFired.get(tabId) === fired)
+        fired.delete(rule.id);
+      console.warn('[coordinate-click] expression sweep failed', error);
+    }
   }
 }
 
@@ -670,9 +682,11 @@ chrome.runtime.onMessage.addListener((message, sender) => {
             fired.delete(rule.id);
           console.log('[coordinate-click] AUTO FINISHED', rule.id, result);
         })
-        .catch((error) =>
-          console.error('[coordinate-click] AUTO FAILED', rule.id, error),
-        );
+        .catch((error) => {
+          if (!(error.completed > 0) && autoFired.get(tabId) === fired)
+            fired.delete(rule.id);
+          console.error('[coordinate-click] AUTO FAILED', rule.id, error);
+        });
     }
   })().catch((error) =>
     console.warn('[coordinate-click] rule check failed', error),

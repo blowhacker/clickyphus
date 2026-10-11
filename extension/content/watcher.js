@@ -1,7 +1,7 @@
 // Runs inside every permitted frame. Only sends matching phrases, not page text.
 (() => {
   let rules = [];
-  let reported = new Set();
+  const pending = new Set();
   let scheduled = false;
 
   function containsText(root, needle) {
@@ -28,7 +28,6 @@
   // rather than trusting the one-time AUTO_TEXT_FOUND notification.
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.type === 'RECHECK_AUTO_RULES') {
-      reported.clear();
       scan();
       sendResponse({ ok: true });
       return false;
@@ -66,12 +65,13 @@
     );
     for (const needle of needles) {
       const key = location.href + '|' + needle;
-      if (reported.has(key)) continue;
+      if (pending.has(key)) continue;
       if (containsText(document.body || document.documentElement, needle)) {
-        reported.add(key);
+        pending.add(key);
         chrome.runtime
           .sendMessage({ type: 'AUTO_TEXT_FOUND', textMatch: needle })
-          .catch(() => {});
+          .catch(() => {})
+          .finally(() => pending.delete(key));
       }
     }
   }
@@ -89,6 +89,7 @@
   }
   document.addEventListener('DOMContentLoaded', startChecks, { once: true });
   window.addEventListener('load', schedule, { once: true });
+  window.addEventListener('pageshow', startChecks);
   chrome.storage.local.get(['autoRules', 'autoRule']).then((v) => {
     rules =
       v.autoRules || (v.autoRule ? [{ ...v.autoRule, id: 'legacy' }] : []);
@@ -97,7 +98,6 @@
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local' || !changes.autoRules) return;
     rules = changes.autoRules.newValue || [];
-    reported.clear();
     schedule();
   });
   new MutationObserver(schedule).observe(document, {
