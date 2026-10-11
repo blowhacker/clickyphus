@@ -20,10 +20,19 @@ function drawClickMarker(x, y, index, total, clicked) {
   label.textContent = `${index}/${total} (${x},${y})`;
   label.style.cssText = `position:absolute;left:${x - 18}px;top:${y + 13}px;transform:translateX(-100%);background:#151515;color:#fff;border:1px solid #ff214f;padding:3px 6px;border-radius:4px;white-space:nowrap;font:12px monospace`;
   host.replaceChildren(dot, h, v, label);
-  // Anchor the muzzle to the right of the target; mirror only the SVG artwork.
-  const muzzleX = Math.max(x + 32, Math.min(x + 160, window.innerWidth - 85));
+  // Use the click index so aim and fire share a pose and each sweep restarts.
+  const phase = (index - 1) % 12;
+  const angle = -30 + 10 * (phase <= 6 ? phase : 12 - phase);
+  const radians = (angle * Math.PI) / 180;
+  const distance = Math.max(
+    32,
+    Math.min(160, (window.innerWidth - 85 - x) / Math.cos(radians)),
+  );
+  const muzzleX = x + distance * Math.cos(radians);
+  const muzzleY = y + distance * Math.sin(radians);
+  const rotation = `rotate(${angle}deg)`;
   const gun = document.createElement('div');
-  gun.style.cssText = `position:absolute;left:${muzzleX}px;top:${y}px;transform-origin:0 0;pointer-events:none;filter:drop-shadow(0 3px 6px #0008)`;
+  gun.style.cssText = `position:absolute;left:${muzzleX}px;top:${muzzleY}px;transform:${rotation};transform-origin:0 0;pointer-events:none;filter:drop-shadow(0 3px 6px #0008)`;
   const ns = 'http://www.w3.org/2000/svg';
   function svgElement(tag, attributes) {
     const element = document.createElementNS(ns, tag);
@@ -81,20 +90,23 @@ function drawClickMarker(x, y, index, total, clicked) {
     if (!reducedMotion) {
       gun.animate(
         [
-          { transform: 'translateX(0) rotate(0deg)' },
-          { transform: 'translateX(9px) rotate(5deg)', offset: 0.2 },
-          { transform: 'translateX(0) rotate(0deg)' },
+          { transform: rotation },
+          {
+            transform: `${rotation} translateX(9px) rotate(5deg)`,
+            offset: 0.2,
+          },
+          { transform: rotation },
         ],
         { duration: 200, easing: 'ease-out' },
       );
       flash.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 100 });
       const bullet = document.createElement('div');
-      bullet.style.cssText = `position:absolute;left:${muzzleX}px;top:${y - 2}px;width:24px;height:4px;background:#edffc6;box-shadow:0 0 12px #bcff80;border-radius:5px`;
+      bullet.style.cssText = `position:absolute;left:${muzzleX}px;top:${muzzleY - 2}px;transform-origin:0 50%;width:24px;height:4px;background:#edffc6;box-shadow:0 0 12px #bcff80;border-radius:5px`;
       host.append(bullet);
       bullet.animate(
         [
-          { transform: 'translateX(-24px)', opacity: 1 },
-          { transform: `translateX(${x - muzzleX}px)`, opacity: 0 },
+          { transform: `${rotation} translateX(-24px)`, opacity: 1 },
+          { transform: `${rotation} translateX(${-distance}px)`, opacity: 0 },
         ],
         { duration: 120, easing: 'ease-out', fill: 'forwards' },
       );

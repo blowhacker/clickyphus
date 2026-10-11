@@ -178,6 +178,12 @@ const path = require('node:path'),
       await marker.evaluate((el) => getComputedStyle(el).pointerEvents),
       'none',
     );
+    assert.equal(
+      await marker
+        .locator('svg')
+        .evaluate((el) => el.parentElement.style.transform),
+      'rotate(-30deg)',
+    );
     await page.waitForTimeout(500);
     assert.deepEqual(await page.evaluate(() => window.clicks), [
       { x: 150, y: 130, trusted: true },
