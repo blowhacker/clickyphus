@@ -75,6 +75,102 @@ function getGridSize(message) {
   return message.gridSize ?? (message.radius ?? 1) * 2 + 1;
 }
 
+// User-entered code is compiled in an isolated user-script world, then injected
+// directly in MAIN so DOM/page globals work even when the page forbids eval.
+const compiledRules = new Map();
+const compilerWorld = 'coordinate-click-compiler';
+
+async function getUserScriptsStatus() {
+  try {
+    if (!chrome.userScripts?.execute) return { available: false };
+    await chrome.userScripts.getScripts();
+    return { available: true };
+  } catch {
+    return { available: false };
+  }
+}
+
+chrome.runtime.onMessage.addListener((message, sender, respond) => {
+  if (message?.type !== 'GET_USER_SCRIPTS_STATUS') return false;
+  getUserScriptsStatus().then(respond);
+  return true;
+});
+
+async function evaluateUserRule(tabId, documentId, expression) {
+  if (!chrome.userScripts?.execute) return false;
+  const target = { tabId, documentIds: [documentId] };
+  let compiled = compiledRules.get(expression);
+  if (!compiled) {
+    await chrome.userScripts.configureWorld({
+      worldId: compilerWorld,
+      csp: "script-src 'self' 'unsafe-eval'; object-src 'none'",
+      messaging: false,
+    });
+    const [compilation] = await chrome.userScripts.execute({
+      target,
+      world: 'USER_SCRIPT',
+      worldId: compilerWorld,
+      js: [
+        {
+          code: `(() => {
+        const source = ${JSON.stringify(expression)};
+        let evaluate;
+        try {
+          evaluate = new Function(${JSON.stringify('return (\n')} + source + ${JSON.stringify('\n);')});
+        } catch (error) {
+          if (!(error instanceof SyntaxError)) throw error;
+          evaluate = new Function(source);
+        }
+        return evaluate.toString();
+      })()`,
+        },
+      ],
+    });
+    if (
+      compilation?.error ||
+      compilation?.documentId !== documentId ||
+      typeof compilation.result !== 'string'
+    )
+      return false;
+    compiled = compilation.result;
+    if (compiledRules.size >= 100)
+      compiledRules.delete(compiledRules.keys().next().value);
+    compiledRules.set(expression, compiled);
+  }
+  const [evaluation] = await chrome.userScripts.execute({
+    target,
+    world: 'MAIN',
+    js: [
+      {
+        code: `((evaluate) => {
+      try {
+        const value = evaluate.call(window);
+        if (value === true) return true;
+        if (!value || typeof value !== 'object' || typeof value.then === 'function') return false;
+        const x = value.x ?? value.X;
+        const y = value.y ?? value.Y;
+        return Number.isFinite(x) && Number.isFinite(y) && x >= 0 && y >= 0 ? { x, y } : false;
+      } catch (error) {
+        console.warn('[coordinate-click] JS rule failed:', error);
+        return false;
+      }
+    })(${compiled})`,
+      },
+    ],
+  });
+  if (evaluation?.error || evaluation?.documentId !== documentId) return false;
+  const value = evaluation.result;
+  if (value === true) return true;
+  return value &&
+    typeof value === 'object' &&
+    Number.isFinite(value.x) &&
+    Number.isFinite(value.y) &&
+    value.x >= 0 &&
+    value.y >= 0
+    ? { x: value.x, y: value.y }
+    : false;
+}
+
 // Overlay lives in the top-level document, above nested cross-origin frames.
 // pointer-events:none prevents the marker itself from swallowing clicks.
 async function showMarker(target, x, y, index, total, clicked = false) {
@@ -175,6 +271,42 @@ async function clickGrid(
         completed: 0,
       };
     }
+    // Preflight uses content/user scripts, so a false condition never attaches
+    // the debugger. Recheck after attachment as its banner can change layout.
+    if (shouldContinue) {
+      const condition = await shouldContinue();
+      if (!condition)
+        return {
+          ok: true,
+          stopped: true,
+          reason: 'condition_false',
+          tabId,
+          completed: 0,
+        };
+      const center = condition === true ? { x, y } : condition;
+      if (
+        !Number.isFinite(center.x) ||
+        !Number.isFinite(center.y) ||
+        center.x < 0 ||
+        center.y < 0
+      ) {
+        return {
+          ok: true,
+          stopped: true,
+          reason: 'invalid_coordinates',
+          tabId,
+          completed: 0,
+        };
+      }
+    }
+    if (!(await isFocusedTab(tabId)))
+      return {
+        ok: true,
+        stopped: true,
+        reason: 'tab_inactive',
+        tabId,
+        completed: 0,
+      };
     const target = { tabId };
     await chrome.debugger.attach(target, '1.3');
     let completed = 0;
@@ -380,108 +512,82 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 });
 chrome.tabs.onRemoved.addListener((tabId) => autoFired.delete(tabId));
 
-// The watcher wakes the worker without evaluating user code in extension contexts.
-// Runtime.evaluate runs in the top-level page and works with restrictive page CSP.
-chrome.runtime.onMessage.addListener((message, sender) => {
-  if (message?.type !== 'CHECK_EXPRESSION_RULES' || sender.frameId !== 0)
-    return false;
-  (async () => {
-    const tabId = sender.tab?.id;
+// The watcher wakes the worker; all expression checks use User Scripts.
+async function checkExpressionRules(sender) {
+  if (sender.frameId !== 0 || !sender.documentId) return;
+  const tabId = sender.tab?.id;
+  if (
+    !Number.isInteger(tabId) ||
+    queues.has(tabId) ||
+    !(await isFocusedTab(tabId))
+  )
+    return;
+  const { autoRules = [] } = await chrome.storage.local.get('autoRules');
+  const tab = await chrome.tabs.get(tabId);
+  if (!tab.url || sender.url !== tab.url || queues.has(tabId)) return;
+  for (const rule of autoRules) {
     if (
-      !Number.isInteger(tabId) ||
-      queues.has(tabId) ||
-      !(await isFocusedTab(tabId))
+      !rule.enabled ||
+      rule.ruleType !== 'expression' ||
+      !rule.expression?.trim() ||
+      !matchesRuleUrl(tab.url, rule.urlMatch)
     )
-      return;
-    const { autoRules = [] } = await chrome.storage.local.get('autoRules');
-    const tab = await chrome.tabs.get(tabId);
-    if (!tab.url || sender.url !== tab.url || queues.has(tabId)) return;
-    for (const rule of autoRules) {
-      if (
-        !rule.enabled ||
-        rule.ruleType !== 'expression' ||
-        !rule.expression?.trim() ||
-        !matchesRuleUrl(tab.url, rule.urlMatch)
-      )
-        continue;
-      let fired = autoFired.get(tabId);
-      if (!fired) {
-        fired = new Set();
-        autoFired.set(tabId, fired);
-      }
-      if (fired.has(rule.id)) continue;
-      const expectedUrl = tab.url;
-      const shouldContinue = async () => {
-        try {
-          if (
-            autoFired.get(tabId) !== fired ||
-            (await chrome.tabs.get(tabId)).url !== expectedUrl
-          )
-            return false;
-          const response = await chrome.debugger.sendCommand(
-            { tabId },
-            'Runtime.evaluate',
-            {
-              expression: `(() => {
-                const source = ${JSON.stringify(rule.expression)};
-                let evaluate;
-                try {
-                  evaluate = new Function(${JSON.stringify('return (\n')} + source + ${JSON.stringify('\n);')});
-                } catch (error) {
-                  if (!(error instanceof SyntaxError)) throw error;
-                  evaluate = new Function(source);
-                }
-                const value = evaluate.call(window);
-                if (value === true) return true;
-                if (!value || typeof value !== 'object' || typeof value.then === 'function') return false;
-                const x = value.x ?? value.X;
-                const y = value.y ?? value.Y;
-                return Number.isFinite(x) && Number.isFinite(y) && x >= 0 && y >= 0
-                  ? { x, y } : false;
-              })()`,
-              returnByValue: true,
-              timeout: 500,
-            },
-          );
-          const value = response.result?.value;
-          if (response.exceptionDetails || !value) return false;
-          if (
-            value !== true &&
-            !(
-              typeof value === 'object' &&
-              Number.isFinite(value.x) &&
-              Number.isFinite(value.y) &&
-              value.x >= 0 &&
-              value.y >= 0
-            )
-          )
-            return false;
-          fired.add(rule.id);
-          return value;
-        } catch {
-          return false;
-        }
-      };
-      const result = await clickGrid(
-        tabId,
-        rule.x,
-        rule.y,
-        getGridSize(rule),
-        rule.step,
-        rule.intervalMs,
-        0,
-        rule.visualize,
-        shouldContinue,
-        { type: 'expression', ruleId: rule.id },
-      );
-      if (
-        result.stopped &&
-        result.completed === 0 &&
-        autoFired.get(tabId) === fired
-      )
-        fired.delete(rule.id);
+      continue;
+    let fired = autoFired.get(tabId);
+    if (!fired) {
+      fired = new Set();
+      autoFired.set(tabId, fired);
     }
-  })().catch((error) =>
+    if (fired.has(rule.id)) continue;
+    const expectedUrl = tab.url;
+    const shouldContinue = async () => {
+      try {
+        if (
+          autoFired.get(tabId) !== fired ||
+          (await chrome.tabs.get(tabId)).url !== expectedUrl
+        )
+          return false;
+        const value = await evaluateUserRule(
+          tabId,
+          sender.documentId,
+          rule.expression,
+        );
+        if (
+          !value ||
+          autoFired.get(tabId) !== fired ||
+          (await chrome.tabs.get(tabId)).url !== expectedUrl
+        )
+          return false;
+        fired.add(rule.id);
+        return value;
+      } catch {
+        return false;
+      }
+    };
+    const result = await clickGrid(
+      tabId,
+      rule.x,
+      rule.y,
+      getGridSize(rule),
+      rule.step,
+      rule.intervalMs,
+      0,
+      rule.visualize,
+      shouldContinue,
+      { type: 'expression', ruleId: rule.id },
+    );
+    if (
+      result.stopped &&
+      result.completed === 0 &&
+      autoFired.get(tabId) === fired
+    )
+      fired.delete(rule.id);
+  }
+}
+
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (message?.type !== 'CHECK_EXPRESSION_RULES') return false;
+  checkExpressionRules(sender).catch((error) =>
     console.warn('[coordinate-click] expression check failed', error),
   );
   return false;

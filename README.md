@@ -6,7 +6,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the components, rule evaluation, clic
 
 ## Development
 
-Load `extension/` via **chrome://extensions → Developer mode → Load unpacked**.
+Requires Chrome 138 or newer. Load `extension/` via **chrome://extensions → Developer mode → Load unpacked**.
 After changes, reload the extension and refresh open pages.
 
 ```sh
@@ -27,7 +27,11 @@ Packaging can also run directly with `python3 scripts/package.py`, without npm.
 
 ## JavaScript expression rules
 
-Choose **JavaScript expression** as the rule type, optionally enter a URL match and enter an expression such as `document.querySelector('button.ready') !== null`, then save. Expressions run in the top-level page and can access `document`, `window`, and page variables. Return `true` to use saved coordinates, `{ x, y }` to override the grid center, or `false` to skip clicks. Coordinates must be finite nonnegative numbers; uppercase `{ X, Y }` is also accepted. Expressions and function bodies with `return` are supported. Invalid results, promises, and errors prevent clicks. Use condition expressions without side effects because they are evaluated repeatedly (about every 2.5 seconds, on page mutations and focus, and before each click). As with text rules, only the focused active tab runs, once per page load.
+After reloading the updated extension, go to **chrome://extensions → Coordinate Click Companion → Details → Allow User Scripts** and turn it on. The popup offers an **Open extension settings** button when this is needed. If the setup message remains after reopening the popup, reload the extension and refresh the target page.
+
+JS conditions are checked through Chrome's User Scripts API, without attaching the debugger. False results, errors, and missing permission do not show the debugging bar. Chrome's bar appears when a matching rule starts a click sequence. There is no fallback to debugger-based condition evaluation. Page DOM access, page globals, `console.log`, expressions, and blocks with `return` still work.
+
+Choose **JavaScript expression** as the rule type, optionally enter a URL match and enter an expression such as `document.querySelector('button.ready') !== null`, then save. Expressions run in the top-level page and can access `document`, `window`, and page variables. Return `true` to use saved coordinates, `{ x, y }` to override the grid center, or `false` to skip clicks. Coordinates must be finite nonnegative numbers; uppercase `{ X, Y }` is also accepted. Expressions and function bodies with `return` are supported. Invalid results, promises, and errors prevent clicks. Use condition expressions without side effects because they are evaluated repeatedly (after DOM readiness with early retries at 1 and 2 seconds, then about every 2.5 seconds, on page mutations and focus, and before each click). Checks do not wait for slow images to load. Return `false` while the element or app state you need is not ready; checks continue until the rule matches. As with text rules, only the focused active tab runs, once per page load.
 
 Leave **URL contains** blank, or enter `*`, to match all supported pages. Other values match a case-insensitive URL substring; wildcard patterns such as `*.example.com` are not supported.
 
@@ -53,3 +57,12 @@ Grid delay accepts whole numbers from 0 to 5000 ms, including 30 ms. This pause 
 Only the selected rule type's condition fields are shown. Switching between page text and JavaScript keeps both inputs, and JS rules label saved coordinates as fallback values. New rules start with a single click; select a larger pattern to reveal spacing and pause controls. Grid sizes from 1 to 20 are available.
 
 Use the shared **Save changes** button to apply edits, enable/disable changes, and removals. The footer tracks unsaved changes, and validation points to the affected field. Removing a rule can be undone before saving. Ordinary unsaved edits are discarded when the popup closes; coordinate picking preserves a draft so editing can continue afterward.
+
+## Browser regression test
+
+```sh
+npx playwright install chromium
+npm run test:browser
+```
+
+This launches an isolated test profile, exercises the Allow User Scripts toggle, verifies false checks never attach the debugger, and tests matching DOM/page-global conditions under strict CSP and Trusted Types. It also checks permission revocation and text-rule behavior. Set `CHROMIUM_EXECUTABLE` to reuse an existing Chrome for Testing installation.

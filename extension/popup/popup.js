@@ -1,5 +1,6 @@
 const $ = (sel, root = document) => root.querySelector(sel);
 const store = $('#rules');
+let userScriptsAvailable = null;
 async function getTargetTab() {
   const browserWindow = await chrome.windows.getLastFocused({
     windowTypes: ['normal'],
@@ -94,10 +95,12 @@ function createRule(rule = {}) {
   });
   $('.pick-rule', node).addEventListener('click', () => pickRulePosition(node));
   store.append(node);
+  renderScriptSetup();
   return node;
 }
 let removedRule = null;
 function markDirty() {
+  renderScriptSetup();
   $('#save-state').textContent = 'Unsaved changes';
   $('#save-state').dataset.dirty = 'true';
   $('#save-rules').disabled = false;
@@ -413,3 +416,29 @@ chrome.storage.onChanged.addListener((changes, area) => {
     showLastSweep(changes.lastSweep.newValue);
 });
 $('.footer').textContent += ` · v${chrome.runtime.getManifest().version}`;
+
+function renderScriptSetup() {
+  const hasJsRule = [...store.querySelectorAll('[name="ruleType"]')].some(
+    (field) => field.value === 'expression',
+  );
+  $('#script-setup').hidden = userScriptsAvailable !== false || !hasJsRule;
+}
+async function refreshScriptSetup() {
+  try {
+    const status = await chrome.runtime.sendMessage({
+      type: 'GET_USER_SCRIPTS_STATUS',
+    });
+    userScriptsAvailable = status?.available === true;
+  } catch {
+    userScriptsAvailable = false;
+  }
+  renderScriptSetup();
+}
+$('#open-script-settings').addEventListener('click', async () => {
+  await chrome.tabs.create({
+    url: `chrome://extensions/?id=${chrome.runtime.id}`,
+  });
+  window.close();
+});
+window.addEventListener('focus', refreshScriptSetup);
+refreshScriptSetup();

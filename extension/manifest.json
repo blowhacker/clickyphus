@@ -1,9 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Coordinate Click Companion",
-  "version": "0.8.0",
+  "version": "0.9.0",
+  "minimum_chrome_version": "138",
   "description": "Manual and conditional coordinate grid clicks via Chrome DevTools Protocol.",
-  "permissions": ["debugger", "activeTab", "storage", "tabs"],
+  "permissions": ["debugger", "activeTab", "storage", "tabs", "userScripts"],
   "background": {
     "service_worker": "background.js"
   },

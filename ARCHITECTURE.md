@@ -25,8 +25,10 @@ flowchart TD
     Worker -->|Start picker| Picker[Top-level coordinate picker]
     Picker -->|Selected coordinates| Worker
     Worker -->|Save picked draft| Storage
-    Worker --> Debugger[Chrome debugger / DevTools Protocol]
-    Debugger -->|Evaluate expressions, show markers, dispatch mouse input| Page[Target page]
+    Worker -->|Check JS condition| Scripts[Chrome User Scripts API]
+    Scripts -->|Compile in isolated world, execute in main world| Page[Target page]
+    Worker -->|Only after a matching condition| Debugger[Chrome debugger / DevTools Protocol]
+    Debugger -->|Show markers, dispatch mouse input| Page
 ```
 
 ## Popup editing
@@ -41,21 +43,25 @@ Every rule includes an enabled flag, URL substring, condition, viewport coordina
 
 The watcher loads saved rules into each permitted frame. It scans DOM text, including open shadow roots, while excluding script, style, noscript, and template content. Text matching is case insensitive and does not require the text to be visible.
 
-DOM changes schedule a scan after 450 ms, and a timer scans every 2.5 seconds. A matching phrase produces an `AUTO_TEXT_FOUND` message; the worker checks the saved rule, URL, and tab focus before scheduling clicks. The watcher suppresses repeat notifications for an already reported phrase and frame URL until rules change or a focus recheck clears that state.
+Checks start once the DOM is ready, without waiting for images or other resources. Startup checks run after 450 ms, 1 second, and 2 seconds; false JS results remain eligible for retry. DOM changes and the window load event schedule a scan after 450 ms, and a timer continues scanning every 2.5 seconds. A matching phrase produces an `AUTO_TEXT_FOUND` message; the worker checks the saved rule, URL, and tab focus before scheduling clicks. The watcher suppresses repeat notifications for an already reported phrase and frame URL until rules change or a focus recheck clears that state.
 
 Before each automatic click, the worker asks the originating document or frame whether the phrase is still present. Navigation, a missing frame, a failed recheck, or disappearing text stops the sequence.
 
 ### JavaScript expression
 
-When expression rules are enabled, the top-level watcher sends `CHECK_EXPRESSION_RULES` during scans. The worker selects enabled rules matching the URL and evaluates their expressions through DevTools Protocol `Runtime.evaluate` while attached to the tab.
+When expression rules are enabled, the top-level watcher sends `CHECK_EXPRESSION_RULES` during scans. The worker selects enabled rules matching the URL and evaluates their expressions through `chrome.userScripts.execute`, bound to the originating top-level document ID. A preflight condition check runs before debugger attachment; false results and errors do not open a debugger session.
 
-Expressions run in the top-level page context, with access to its DOM and JavaScript globals. They synchronously return `true` for saved coordinates, `{ x, y }` for a computed grid center, or `false` to skip clicks. Uppercase `{ X, Y }` is also accepted. Coordinates must be finite nonnegative numbers. Expressions and function bodies with `return` are supported; other results, promises, and errors do not trigger clicks. Evaluation has a 500 ms timeout. For example:
+The source is compiled without executing it in a named `USER_SCRIPT` world with eval enabled and extension messaging disabled. Compilation tries an expression first, then a function body. Its function source is cached by rule code, with a maximum of 100 entries. The worker injects that function directly in `MAIN`, outside the result-normalization function's scope so page globals are not shadowed. This supports the page's DOM and JavaScript globals without using `eval` or `new Function` in the main world, including on pages with strict CSP and Trusted Types.
+
+Chrome 138+ and the `userScripts` permission are required. The user enables **Allow User Scripts** in Chrome's extension settings. The popup queries availability through `GET_USER_SCRIPTS_STATUS` and shows setup instructions when JS rules need it. If access is missing or revoked, JS rules pause; there is no debugger fallback. Text rules and manual clicks do not depend on this permission.
+
+Expressions run in the top-level page context, with access to its DOM and JavaScript globals. They synchronously return `true` for saved coordinates, `{ x, y }` for a computed grid center, or `false` to skip clicks. Uppercase `{ X, Y }` is also accepted. Coordinates must be finite nonnegative numbers. Expressions and function bodies with `return` are supported; other results, promises, and errors do not trigger clicks. User Scripts has no execution-timeout option; code should remain short and synchronous. The previous debugger-based 500 ms timeout no longer applies. For example:
 
 ```js
-document.querySelector('button.ready') !== null;
+return document.querySelector('button.ready') !== null;
 ```
 
-The grid center is resolved once at the start of a sweep and stays fixed for that sweep. The same expression is checked before every click, and again after showing a marker. A false result or error stops the sequence. Expressions should have no side effects because evaluation repeats. Expression checks are skipped while the tab already has a queued click job.
+After a successful preflight, the condition and center are checked again after debugger attachment, since the Chrome banner can change the viewport layout. The grid center is then fixed for that sweep. The same expression is checked before every click, and again after showing a marker. A false result or error stops the sequence. Expressions should have no side effects because evaluation repeats. Expression checks are skipped while the tab already has a queued click job.
 
 ### Repeat prevention and focus
 
@@ -96,12 +102,12 @@ The worker verifies the tab and draft target, updates the matching draft, and at
 | Job queues, fired rule IDs, picking tabs    | Worker memory         | Coordinate execution and prevent repeated work during the worker's lifetime.                                 |
 | Loaded rules and reported phrases           | Content-script memory | Scan each frame and suppress duplicate text notifications.                                                   |
 
-Content scripts run in Chrome's isolated extension context. User expressions run separately in the page context through the debugger API; the popup does not evaluate them. Text notifications carry the matching phrase rather than the page's full text.
+Content scripts run in Chrome's isolated extension context. User expressions are compiled in an isolated user-script world and run in the page context through the User Scripts API; the popup does not evaluate them. Text notifications carry the matching phrase rather than the page's full text.
 
-The manifest grants debugger, tab, active-tab, storage, and all-URL host access. Chrome-restricted pages cannot use the content scripts or picker, and debugger attachment failures abort jobs. The extension does not make application-level network requests or use a remote service.
+The manifest grants debugger, tab, active-tab, storage, userScripts, and all-URL host access. Chrome-restricted pages cannot use the content scripts or picker, and debugger attachment failures abort jobs. The extension does not make application-level network requests or use a remote service.
 
 ## Development and packaging
 
 Load `extension/` as an unpacked extension. After code changes, reload the extension and refresh open pages to replace their content scripts.
 
-`npm run check` runs ESLint and Prettier checks. `npm run build` invokes the Python packaging script, which reads the manifest version and writes `dist/coordinate-click-companion-<version>.zip`. The archive contains extension files only; repository documentation and development dependencies are excluded.
+`npm test` runs unit and regression tests. `npm run test:browser` runs the isolated Chrome integration test for User Scripts, strict page policies, permission changes, and debugger attachment. `npm run check` runs ESLint and Prettier checks. `npm run build` invokes the Python packaging script, which reads the manifest version and writes `dist/coordinate-click-companion-<version>.zip`. The archive contains extension files only; repository documentation and development dependencies are excluded.

@@ -442,6 +442,22 @@
       .rule[data-enabled='false'] .rule-kind {
         color: var(--muted);
       }
+      .script-setup {
+        margin: 10px 0;
+        padding: 12px;
+        border: 1px solid #6c5936;
+        border-radius: 8px;
+        background: #29241a;
+      }
+      .script-setup strong {
+        color: #f3d593;
+        font-size: 12px;
+      }
+      .script-setup p {
+        margin: 6px 0 10px;
+        color: #c9bfab;
+        font-size: 11px;
+      }
       .run-history {
         margin-top: 16px;
         color: var(--muted);
@@ -486,6 +502,16 @@
       <button id="add" type="button">+ Add rule</button>
     </div>
     <div class="scope">Active tab only · once per page load</div>
+    <aside id="script-setup" class="script-setup" hidden aria-live="polite">
+      <strong>Enable JavaScript rules</strong>
+      <p>
+        Turn on “Allow User Scripts” in this extension’s Chrome settings. If
+        this message remains after reopening the popup, reload the extension.
+      </p>
+      <button id="open-script-settings" type="button">
+        Open extension settings
+      </button>
+    </aside>
     <div id="rules"></div>
     <div class="empty">
       <strong>No rules yet</strong>Add a rule to automate clicks on a matching

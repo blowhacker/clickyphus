@@ -45,6 +45,7 @@
 
   function scan() {
     scheduled = false;
+    if (document.readyState === 'loading') return;
     if (
       window === window.top &&
       rules.some(
@@ -79,10 +80,19 @@
     scheduled = true;
     setTimeout(scan, 450);
   }
+  // DOM readiness is enough: slow images must not block rule evaluation.
+  // Retry early for app initialization, then keep the regular polling below.
+  function startChecks() {
+    schedule();
+    setTimeout(scan, 1000);
+    setTimeout(scan, 2000);
+  }
+  document.addEventListener('DOMContentLoaded', startChecks, { once: true });
+  window.addEventListener('load', schedule, { once: true });
   chrome.storage.local.get(['autoRules', 'autoRule']).then((v) => {
     rules =
       v.autoRules || (v.autoRule ? [{ ...v.autoRule, id: 'legacy' }] : []);
-    schedule();
+    if (document.readyState !== 'loading') startChecks();
   });
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local' || !changes.autoRules) return;
