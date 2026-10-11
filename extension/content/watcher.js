@@ -109,6 +109,7 @@
     subtree: true,
     childList: true,
     characterData: true,
+    attributes: true,
   });
   setInterval(scan, 2500);
 })();

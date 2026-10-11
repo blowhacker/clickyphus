@@ -45,7 +45,12 @@ async function watcher(readyState, { text = false, failMessage = false } = {}) {
       events.poll = fn;
     },
     MutationObserver: class {
-      observe() {}
+      constructor(callback) {
+        events.mutation = callback;
+      }
+      observe(target, options) {
+        events.observerOptions = options;
+      }
     },
     chrome: {
       runtime: {
@@ -132,4 +137,16 @@ test('restored pages start fresh checks without needing a reload', async () => {
     state.timers.map((timer) => timer.delay),
     [450, 1000, 2000],
   );
+});
+
+test('attribute-only readiness changes schedule a check before the next polling tick', async () => {
+  const state = await watcher('complete');
+  for (const timer of state.timers.splice(0)) timer.fn();
+  assert.equal(state.events.observerOptions.attributes, true);
+  const before = state.messages.length;
+  state.events.mutation([{ type: 'attributes', attributeName: 'hidden' }]);
+  assert.equal(state.timers.length, 1);
+  assert.equal(state.timers[0].delay, 450);
+  state.timers[0].fn();
+  assert.equal(state.messages.length, before + 1);
 });

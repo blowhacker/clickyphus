@@ -8,7 +8,8 @@ function harness(kind, overrides = {}) {
   const messages = [],
     attachments = [],
     presses = [],
-    checks = [];
+    checks = [],
+    updates = [];
   const state = {
     value: true,
     focused: true,
@@ -55,12 +56,13 @@ function harness(kind, overrides = {}) {
     },
     tabs: {
       onActivated: event,
-      onUpdated: event,
+      onUpdated: { addListener: (f) => updates.push(f) },
       onRemoved: event,
       get: async () => tab,
-      sendMessage: async (id, message, options) => ({
-        present: evaluate(options) === true,
-      }),
+      sendMessage: async (id, message, options) =>
+        message.type === 'CHECK_TEXT_PRESENT'
+          ? { present: evaluate(options) === true }
+          : {},
     },
     windows: {
       onFocusChanged: event,
@@ -103,6 +105,11 @@ function harness(kind, overrides = {}) {
           presses.push({ x: args.x, y: args.y });
           state.value = false;
         }
+        if (args.type === 'mouseReleased' && state.releaseGate) {
+          const gate = state.releaseGate;
+          state.releaseGate = null;
+          await gate;
+        }
         if (args.type === 'mouseReleased' && state.releaseFailures > 0) {
           state.releaseFailures--;
           throw new Error('Release failed');
@@ -135,6 +142,7 @@ function harness(kind, overrides = {}) {
     await flush();
   };
   return {
+    updates,
     state,
     tab,
     rule,
@@ -228,5 +236,35 @@ for (const kind of ['expression', 'bundled']) {
     h.sender.frameId = 2;
     await h.poll();
     assert.deepEqual(h.attachments, []);
+  });
+}
+
+for (const kind of ['expression', 'bundled']) {
+  test(`${kind}: a new page check waits for the previous page sweep instead of being discarded`, async () => {
+    let release;
+    const h = harness(kind, {
+      releaseGate: new Promise((resolve) => {
+        release = resolve;
+      }),
+    });
+    h.rule.gridSize = 1;
+    await h.poll();
+    assert.equal(h.presses.length, 1);
+    h.tab.url = 'https://example.com/next';
+    h.sender.url = h.tab.url;
+    h.sender.documentId = 'document-2';
+    h.updates.forEach((listener) => listener(1, { status: 'loading' }));
+    h.state.value = true;
+    h.notify();
+    await h.flush();
+    assert.equal(h.presses.length, 1);
+    release();
+    await h.flush();
+    assert.equal(
+      h.presses.length,
+      2,
+      'new document must run without another timer notification',
+    );
+    assert.deepEqual(h.attachments, ['attach', 'detach', 'attach', 'detach']);
   });
 }

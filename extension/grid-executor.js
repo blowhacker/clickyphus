@@ -347,5 +347,11 @@ function createGridExecutor({ isFocusedTab }) {
     });
   }
 
-  return { run, isBusy: (tabId) => queues.has(tabId) };
+  async function whenIdle(tabId) {
+    while (queues.has(tabId)) {
+      await queues.get(tabId).catch(() => {});
+    }
+  }
+
+  return { run, whenIdle, isBusy: (tabId) => queues.has(tabId) };
 }

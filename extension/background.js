@@ -316,19 +316,12 @@ async function checkAutomaticRules(message, sender) {
   const tabId = sender.tab?.id;
   if (!Number.isInteger(tabId)) return;
   // JS belongs to the top-level document. Text can match inside any frame.
-  if (
-    expressionScan &&
-    (sender.frameId !== 0 || !sender.documentId || gridExecutor.isBusy(tabId))
-  )
-    return;
+  if (expressionScan && (sender.frameId !== 0 || !sender.documentId)) return;
+  if (expressionScan) await gridExecutor.whenIdle(tabId);
   if (!(await isFocusedTab(tabId))) return;
   const { autoRules = [] } = await chrome.storage.local.get('autoRules');
   const tab = await chrome.tabs.get(tabId);
-  if (
-    !tab.url ||
-    (expressionScan && (sender.url !== tab.url || gridExecutor.isBusy(tabId)))
-  )
-    return;
+  if (!tab.url || (expressionScan && sender.url !== tab.url)) return;
   const pending = [];
   for (const rule of autoRules) {
     if (!rule.enabled || !matchesRuleUrl(tab.url, rule.urlMatch)) continue;
