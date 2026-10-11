@@ -45,12 +45,16 @@
     const update = () => {
       const get = (name) =>
         rule.querySelector(`[name="${name}"]`)?.value?.trim() || '';
-      const url = get('urlMatch') || '(set URL)';
-      const phrase = get('textMatch') || '(set text)';
+      const urlMatch = get('urlMatch');
+      const url = !urlMatch || urlMatch === '*' ? 'All URLs' : urlMatch;
+      const phrase =
+        get('ruleType') === 'expression'
+          ? `JS: ${get('expression') || '(set expression)'}`
+          : get('textMatch') || '(set text)';
       const size = get('gridSize') || '?';
       const x = get('x') || '?';
       const y = get('y') || '?';
-      heading.textContent = url === '(set URL)' ? 'New rule · add a URL' : url;
+      heading.textContent = url;
       meta.textContent = `${phrase} · ${size}×${size} at ${x}, ${y}`;
       rule.dataset.enabled = String(checkbox.checked);
       title.title = title.textContent;

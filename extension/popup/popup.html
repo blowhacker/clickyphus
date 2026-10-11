@@ -81,7 +81,8 @@
         color: #bdc8cf;
       }
       input:not([type='checkbox']),
-      select {
+      select,
+      textarea {
         width: 100%;
         margin-top: 6px;
         padding: 10px 11px;
@@ -386,7 +387,9 @@
       <h2>Automatic rules</h2>
       <button id="add" type="button">+ Add rule</button>
     </div>
-    <p class="hint">Match a URL and page text to run a click sequence.</p>
+    <p class="hint">
+      Match a URL and page text or JavaScript expression to run clicks.
+    </p>
     <div class="scope">Active tab only · once per page load</div>
     <div id="rules"></div>
     <div class="empty">
@@ -451,12 +454,31 @@
           ><button type="button" class="remove">Remove</button>
         </div>
         <label
-          >URL contains<input
+          >URL contains (optional)<input
             name="urlMatch"
             type="text"
-            placeholder="example.com/path"
+            placeholder="Blank or * for all URLs"
         /></label>
         <label
+          >Rule type<select name="ruleType">
+            <option value="text">Page text</option>
+            <option value="expression">JavaScript expression</option>
+          </select></label
+        >
+        <label class="expression-field" hidden
+          >JavaScript expression<textarea
+            name="expression"
+            rows="4"
+            placeholder="document.querySelector('button.ready') !== null"
+          ></textarea
+          ><span class="hint"
+            >Runs in the top-level page. Return true for saved coordinates, { x,
+            y } for a computed grid center, or false to skip. Expressions and
+            code with return are supported; checked repeatedly and before each
+            click.</span
+          ></label
+        >
+        <label class="text-field"
           >Page text contains<input
             name="textMatch"
             type="text"
@@ -500,7 +522,7 @@
         <button type="button" class="save primary">Save rules</button>
       </section>
     </template>
-    <p class="footer">URL + TEXT → CLICK</p>
+    <p class="footer">URL + CONDITION → CLICK</p>
     <script src="popup.js"></script>
     <script src="popup-layout.js"></script>
   </body>

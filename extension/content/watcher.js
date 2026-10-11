@@ -45,9 +45,22 @@
 
   function scan() {
     scheduled = false;
+    if (
+      window === window.top &&
+      rules.some(
+        (r) => r.enabled && r.ruleType === 'expression' && r.expression?.trim(),
+      )
+    ) {
+      chrome.runtime
+        .sendMessage({ type: 'CHECK_EXPRESSION_RULES' })
+        .catch(() => {});
+    }
     const needles = new Set(
       rules
-        .filter((r) => r.enabled && r.textMatch?.trim())
+        .filter(
+          (r) =>
+            r.enabled && r.ruleType !== 'expression' && r.textMatch?.trim(),
+        )
         .map((r) => r.textMatch.trim().toLowerCase()),
     );
     for (const needle of needles) {

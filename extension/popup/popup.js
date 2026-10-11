@@ -36,6 +36,8 @@ function createRule(rule = {}) {
     'enabled',
     'urlMatch',
     'textMatch',
+    'ruleType',
+    'expression',
     'x',
     'y',
     'step',
@@ -48,6 +50,13 @@ function createRule(rule = {}) {
       else field.value = rule[key];
     }
   }
+  const updateRuleType = () => {
+    const expression = $('[name="ruleType"]', node).value === 'expression';
+    $('.expression-field', node).hidden = !expression;
+    $('.text-field', node).hidden = expression;
+  };
+  $('[name="ruleType"]', node).addEventListener('change', updateRuleType);
+  updateRuleType();
   $('.remove', node).addEventListener('click', async () => {
     node.remove();
     await saveRules();
@@ -63,6 +72,8 @@ function readRule(node) {
     enabled: get('enabled').checked,
     urlMatch: get('urlMatch').value.trim(),
     textMatch: get('textMatch').value.trim(),
+    ruleType: get('ruleType').value,
+    expression: get('expression').value.trim(),
     x: Number(get('x').value),
     y: Number(get('y').value),
     gridSize: Number(get('gridSize').value),
@@ -75,8 +86,7 @@ async function saveRules() {
   const rules = [...store.children].map(readRule);
   for (const r of rules) {
     if (
-      !r.urlMatch ||
-      !r.textMatch ||
+      !(r.ruleType === 'expression' ? r.expression : r.textMatch) ||
       !Number.isInteger(r.x) ||
       r.x < 0 ||
       !Number.isInteger(r.y) ||
@@ -88,7 +98,7 @@ async function saveRules() {
     ) {
       $('#status').dataset.tone = 'error';
       $('#status').textContent =
-        'Add a URL and page text to every rule, and check the numeric fields.';
+        'Add the selected condition to every rule, and check the numeric fields.';
       const invalid = [...store.children].find(
         (node) => readRule(node).id === r.id,
       );

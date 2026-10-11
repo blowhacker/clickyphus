@@ -66,6 +66,11 @@ function pointsAround(x, y, gridSize, step) {
   return points;
 }
 
+function matchesRuleUrl(url, urlMatch) {
+  const match = urlMatch?.trim().toLowerCase() || '';
+  return !match || match === '*' || url.toLowerCase().includes(match);
+}
+
 function getGridSize(message) {
   return message.gridSize ?? (message.radius ?? 1) * 2 + 1;
 }
@@ -167,7 +172,7 @@ async function clickGrid(
       };
     }
     const target = { tabId };
-    const points = pointsAround(x, y, gridSize, step);
+    let points = pointsAround(x, y, gridSize, step);
     console.log('[coordinate-click] attaching for sweep', {
       tabId,
       x,
@@ -179,6 +184,23 @@ async function clickGrid(
     await chrome.debugger.attach(target, '1.3');
     let completed = 0;
     try {
+      // Resolve an expression-provided center once; keep the grid fixed during
+      // this sweep while continuing to recheck the condition before clicks.
+      if (shouldContinue) {
+        const condition = await shouldContinue();
+        if (!condition) {
+          return {
+            ok: true,
+            stopped: true,
+            reason: 'condition_false',
+            tabId,
+            completed: 0,
+          };
+        }
+        if (typeof condition === 'object') {
+          points = pointsAround(condition.x, condition.y, gridSize, step);
+        }
+      }
       for (const pt of points) {
         if (!(await isFocusedTab(tabId))) {
           return {
@@ -190,7 +212,7 @@ async function clickGrid(
             total: points.length,
           };
         }
-        // Automatic jobs check the original text before every individual click.
+        // Automatic jobs check their condition before every individual click.
         // Manual jobs have no guard and behave exactly as before.
         if (shouldContinue && !(await shouldContinue())) {
           console.log(
@@ -325,6 +347,112 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 });
 chrome.tabs.onRemoved.addListener((tabId) => autoFired.delete(tabId));
 
+// The watcher wakes the worker without evaluating user code in extension contexts.
+// Runtime.evaluate runs in the top-level page and works with restrictive page CSP.
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (message?.type !== 'CHECK_EXPRESSION_RULES' || sender.frameId !== 0)
+    return false;
+  (async () => {
+    const tabId = sender.tab?.id;
+    if (
+      !Number.isInteger(tabId) ||
+      queues.has(tabId) ||
+      !(await isFocusedTab(tabId))
+    )
+      return;
+    const { autoRules = [] } = await chrome.storage.local.get('autoRules');
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab.url || sender.url !== tab.url || queues.has(tabId)) return;
+    for (const rule of autoRules) {
+      if (
+        !rule.enabled ||
+        rule.ruleType !== 'expression' ||
+        !rule.expression?.trim() ||
+        !matchesRuleUrl(tab.url, rule.urlMatch)
+      )
+        continue;
+      let fired = autoFired.get(tabId);
+      if (!fired) {
+        fired = new Set();
+        autoFired.set(tabId, fired);
+      }
+      if (fired.has(rule.id)) continue;
+      const expectedUrl = tab.url;
+      const shouldContinue = async () => {
+        try {
+          if (
+            autoFired.get(tabId) !== fired ||
+            (await chrome.tabs.get(tabId)).url !== expectedUrl
+          )
+            return false;
+          const response = await chrome.debugger.sendCommand(
+            { tabId },
+            'Runtime.evaluate',
+            {
+              expression: `(() => {
+                const source = ${JSON.stringify(rule.expression)};
+                let evaluate;
+                try {
+                  evaluate = new Function('return (\\n' + source + '\\n);');
+                } catch (error) {
+                  if (!(error instanceof SyntaxError)) throw error;
+                  evaluate = new Function(source);
+                }
+                const value = evaluate.call(window);
+                if (value === true) return true;
+                if (!value || typeof value !== 'object' || typeof value.then === 'function') return false;
+                const x = value.x ?? value.X;
+                const y = value.y ?? value.Y;
+                return Number.isFinite(x) && Number.isFinite(y) && x >= 0 && y >= 0
+                  ? { x, y } : false;
+              })()`,
+              returnByValue: true,
+              timeout: 500,
+            },
+          );
+          const value = response.result?.value;
+          if (response.exceptionDetails || !value) return false;
+          if (
+            value !== true &&
+            !(
+              typeof value === 'object' &&
+              Number.isFinite(value.x) &&
+              Number.isFinite(value.y) &&
+              value.x >= 0 &&
+              value.y >= 0
+            )
+          )
+            return false;
+          fired.add(rule.id);
+          return value;
+        } catch {
+          return false;
+        }
+      };
+      const result = await clickGrid(
+        tabId,
+        rule.x,
+        rule.y,
+        getGridSize(rule),
+        rule.step,
+        rule.intervalMs,
+        0,
+        rule.visualize,
+        shouldContinue,
+      );
+      if (
+        result.stopped &&
+        result.completed === 0 &&
+        autoFired.get(tabId) === fired
+      )
+        fired.delete(rule.id);
+    }
+  })().catch((error) =>
+    console.warn('[coordinate-click] expression check failed', error),
+  );
+  return false;
+});
+
 chrome.runtime.onMessage.addListener((message, sender) => {
   if (message?.type !== 'AUTO_TEXT_FOUND') return false;
   (async () => {
@@ -334,10 +462,13 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     const tab = await chrome.tabs.get(tabId);
     if (!tab.url) return;
     for (const rule of autoRules) {
-      if (!rule.enabled || !rule.urlMatch?.trim() || !rule.textMatch?.trim())
+      if (
+        rule.ruleType === 'expression' ||
+        !rule.enabled ||
+        !rule.textMatch?.trim()
+      )
         continue;
-      if (!tab.url.toLowerCase().includes(rule.urlMatch.toLowerCase()))
-        continue;
+      if (!matchesRuleUrl(tab.url, rule.urlMatch)) continue;
       if (rule.textMatch.toLowerCase() !== message.textMatch) continue;
       // Guard synchronously before starting the asynchronous sweep.
       let fired = autoFired.get(tabId);
