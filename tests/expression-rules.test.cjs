@@ -163,11 +163,14 @@ async function runRule(
       error: (...args) => logs.push(args),
     },
   });
-  context.importScripts = (file) =>
-    vm.runInContext(
-      fs.readFileSync(path.join(__dirname, '../extension', file), 'utf8'),
-      context,
-    );
+  context.importScripts = (...files) => {
+    for (const file of files) {
+      vm.runInContext(
+        fs.readFileSync(path.join(__dirname, '../extension', file), 'utf8'),
+        context,
+      );
+    }
+  };
   vm.runInContext(source, context);
   const sender = {
     frameId: 0,

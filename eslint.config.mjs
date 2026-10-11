@@ -16,7 +16,7 @@ export default [
     },
   },
   {
-    files: ['extension/background.js'],
+    files: ['extension/background.js', 'extension/grid-executor.js'],
     languageOptions: {
       globals: {
         ...Object.fromEntries(

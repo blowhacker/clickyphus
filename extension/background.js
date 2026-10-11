@@ -1,5 +1,5 @@
-/* global defaultRules */
-importScripts('bundled-rules.js');
+/* global defaultRules, createGridExecutor */
+importScripts('bundled-rules.js', 'grid-executor.js');
 
 // Defaults are copied into local storage once; later edits belong to the user.
 async function installDefaultRules(details) {
@@ -26,20 +26,19 @@ chrome.runtime.onInstalled.addListener((details) => {
   );
 });
 
-const queues = new Map();
 const pickingTabs = new Set();
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const gridExecutor = createGridExecutor({ isFocusedTab });
 
-function runSerially(tabId, task) {
-  const prior = queues.get(tabId) || Promise.resolve();
-  const current = prior.catch(() => {}).then(task);
-  queues.set(tabId, current);
-  current
-    .finally(() => {
-      if (queues.get(tabId) === current) queues.delete(tabId);
-    })
-    .catch(() => {});
-  return current;
+// History belongs to the worker; the executor only reports where input starts.
+async function recordSweep(source, sweep) {
+  await chrome.storage.local.set({
+    lastSweep: {
+      ...source,
+      ...sweep,
+      version: chrome.runtime.getManifest().version,
+      startedAt: Date.now(),
+    },
+  });
 }
 
 async function isFocusedTab(tabId) {
@@ -73,26 +72,6 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
     /* Window may have closed. */
   }
 });
-
-function pointsAround(x, y, gridSize, step) {
-  // For even sizes, the requested point lies between the four central cells.
-  // Round resulting coordinates to browser CSS pixels.
-  const start = -(gridSize - 1) / 2;
-  const points = [];
-  for (let iy = 0; iy < gridSize; iy++) {
-    for (let ix = 0; ix < gridSize; ix++) {
-      const px = Math.round(x + (start + ix) * step);
-      const py = Math.round(y + (start + iy) * step);
-      if (px >= 0 && py >= 0) points.push({ x: px, y: py });
-    }
-  }
-  // Click nearest the requested point first, and expand outward.
-  points.sort(
-    (a, b) =>
-      (a.x - x) ** 2 + (a.y - y) ** 2 - ((b.x - x) ** 2 + (b.y - y) ** 2),
-  );
-  return points;
-}
 
 function matchesRuleUrl(url, urlMatch) {
   const match = urlMatch?.trim().toLowerCase() || '';
@@ -221,334 +200,24 @@ async function evaluateUserRule(tabId, documentId, expression) {
     : false;
 }
 
-// Overlay lives in the top-level document, above nested cross-origin frames.
-// pointer-events:none prevents the marker itself from swallowing clicks.
-async function showMarker(target, x, y, index, total, clicked = false) {
-  const source = `(() => {
-    const id = '__clickyphus_visualizer__';
-    let host = document.getElementById(id);
-    if (!host) {
-      host = document.createElement('div');
-      host.id = id;
-      host.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483647;overflow:hidden';
-      (document.documentElement || document.body).appendChild(host);
-    }
-    const dot = document.createElement('div');
-    dot.style.cssText = 'position:absolute;left:${x}px;top:${y}px;transform:translate(-50%,-50%);width:24px;height:24px;border:3px solid #ff214f;border-radius:50%;background:rgba(255,33,79,.22);box-shadow:0 0 0 2px white,0 0 12px #ff214f;box-sizing:border-box';
-    const h = document.createElement('div');
-    h.style.cssText = 'position:absolute;left:${x - 16}px;top:${y}px;width:32px;border-top:1px solid #ff214f';
-    const v = document.createElement('div');
-    v.style.cssText = 'position:absolute;left:${x}px;top:${y - 16}px;height:32px;border-left:1px solid #ff214f';
-    const label = document.createElement('div');
-    label.textContent = '${index}/${total} (${x},${y})';
-    label.style.cssText = 'position:absolute;left:${x + 18}px;top:${y + 13}px;background:#151515;color:#fff;border:1px solid #ff214f;padding:3px 6px;border-radius:4px;white-space:nowrap;font:12px monospace';
-    host.replaceChildren(dot,h,v,label);
-    if (${clicked}) {
-      label.textContent = 'Clicked · ' + label.textContent;
-      dot.style.background = '#ff214f';
-      dot.animate([
-        { transform: 'translate(-50%,-50%) scale(.65)' },
-        { transform: 'translate(-50%,-50%) scale(1.2)' },
-        { transform: 'translate(-50%,-50%) scale(1)' }
-      ], { duration: 220, easing: 'ease-out' });
-      const ripple = document.createElement('div');
-      ripple.style.cssText = dot.style.cssText;
-      ripple.style.background = 'transparent';
-      host.append(ripple);
-      ripple.animate([
-        { transform: 'translate(-50%,-50%) scale(1)', opacity: 1 },
-        { transform: 'translate(-50%,-50%) scale(2.5)', opacity: 0 }
-      ], { duration: 320, easing: 'ease-out', fill: 'forwards' });
-    }
-    clearTimeout(window.__coordinateClickMarkerTimer);
-    window.__coordinateClickMarkerTimer = setTimeout(() => host.remove(), 1600);
-  })()`;
-  try {
-    await chrome.debugger.sendCommand(target, 'Runtime.evaluate', {
-      expression: source,
-      returnByValue: true,
-    });
-  } catch (error) {
-    console.warn('[clickyphus] overlay unavailable:', error.message);
-  }
-}
-
-async function clickGrid(
-  tabId,
-  x,
-  y,
-  gridSize = 3,
-  step = 10,
-  intervalMs = 180,
-  startDelayMs = 0,
-  visualize = true,
-  shouldContinue = null,
-  source = { type: 'manual' },
-) {
-  // Spacing and delay have no effect on a single click.
-  if (gridSize === 1) {
-    step = 10;
-    intervalMs = 180;
-  }
-  if (
-    !Number.isInteger(tabId) ||
-    tabId < 0 ||
-    (!shouldContinue &&
-      (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0)) ||
-    !Number.isInteger(gridSize) ||
-    gridSize < 1 ||
-    gridSize > 20 ||
-    !Number.isInteger(step) ||
-    step < 1 ||
-    step > 100 ||
-    !Number.isInteger(intervalMs) ||
-    intervalMs < 0 ||
-    intervalMs > 5000
-  ) {
-    throw new Error(
-      'Invalid tab, coordinates, grid size (1–20), step (1–100), or interval (0–5000ms)',
-    );
-  }
-
-  return runSerially(tabId, async () => {
-    if (startDelayMs) await sleep(startDelayMs);
-    if (!(await isFocusedTab(tabId))) {
-      return {
-        ok: true,
-        stopped: true,
-        reason: 'tab_inactive',
-        tabId,
-        completed: 0,
-      };
-    }
-    // Preflight uses content/user scripts, so a false condition never attaches
-    // the debugger. Recheck after attachment as its banner can change layout.
-    if (shouldContinue) {
-      const condition = await shouldContinue();
-      if (!condition)
-        return {
-          ok: true,
-          stopped: true,
-          reason: 'condition_false',
-          tabId,
-          completed: 0,
-        };
-      const center = condition === true ? { x, y } : condition;
-      if (
-        !Number.isFinite(center.x) ||
-        !Number.isFinite(center.y) ||
-        center.x < 0 ||
-        center.y < 0
-      ) {
-        return {
-          ok: true,
-          stopped: true,
-          reason: 'invalid_coordinates',
-          tabId,
-          completed: 0,
-        };
-      }
-    }
-    if (!(await isFocusedTab(tabId)))
-      return {
-        ok: true,
-        stopped: true,
-        reason: 'tab_inactive',
-        tabId,
-        completed: 0,
-      };
-    const target = { tabId };
-    await chrome.debugger.attach(target, '1.3');
-    let completed = 0;
-    let dispatched = 0;
-    try {
-      // Resolve an expression-provided center once; keep the grid fixed during
-      // this sweep while continuing to recheck the condition before clicks.
-      if (shouldContinue) {
-        const condition = await shouldContinue();
-        if (!condition) {
-          return {
-            ok: true,
-            stopped: true,
-            reason: 'condition_false',
-            tabId,
-            completed: 0,
-          };
-        }
-        if (typeof condition === 'object') {
-          x = condition.x;
-          y = condition.y;
-        }
-      }
-      if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0) {
-        console.warn(
-          '[clickyphus] rule returned true but saved X/Y are invalid; return { x, y } or supply fallback coordinates',
-        );
-        return {
-          ok: true,
-          stopped: true,
-          reason: 'invalid_coordinates',
-          tabId,
-          completed: 0,
-        };
-      }
-      const points = pointsAround(x, y, gridSize, step);
-      console.log('[clickyphus] resolved sweep center', {
-        tabId,
-        x,
-        y,
-        gridSize,
-        step,
-        count: points.length,
-      });
-      for (const pt of points) {
-        if (!(await isFocusedTab(tabId))) {
-          return {
-            ok: true,
-            stopped: true,
-            reason: 'tab_inactive',
-            tabId,
-            completed,
-            total: points.length,
-          };
-        }
-        // Automatic jobs check their condition before every individual click.
-        // Manual jobs have no guard and behave exactly as before.
-        if (shouldContinue && !(await shouldContinue())) {
-          console.log(
-            '[clickyphus] AUTO STOP: matching text disappeared or frame unavailable',
-            { tabId, completed, total: points.length },
-          );
-          return {
-            ok: true,
-            stopped: true,
-            reason: 'text_missing',
-            tabId,
-            completed,
-            total: points.length,
-          };
-        }
-        if (visualize) {
-          await showMarker(target, pt.x, pt.y, completed + 1, points.length);
-          await sleep(120); // Let the crosshair become visible before clicking
-        }
-        // The page can change while the marker is shown; check again.
-        if (shouldContinue && !(await shouldContinue())) {
-          console.log('[clickyphus] AUTO STOP before mouse press', {
-            tabId,
-            completed,
-          });
-          return {
-            ok: true,
-            stopped: true,
-            reason: 'text_missing',
-            tabId,
-            completed,
-            total: points.length,
-          };
-        }
-        if (!(await isFocusedTab(tabId))) {
-          return {
-            ok: true,
-            stopped: true,
-            reason: 'tab_inactive',
-            tabId,
-            completed,
-            total: points.length,
-          };
-        }
-        if (completed === 0) {
-          await chrome.storage.local
-            .set({
-              lastSweep: {
-                ...source,
-                tabId,
-                center: { x, y },
-                firstPoint: pt,
-                version: chrome.runtime.getManifest().version,
-                startedAt: Date.now(),
-              },
-            })
-            .catch((error) =>
-              console.warn('[clickyphus] could not record sweep', error),
-            );
-        }
-        const move = { type: 'mouseMoved', x: pt.x, y: pt.y };
-        const press = {
-          type: 'mousePressed',
-          x: pt.x,
-          y: pt.y,
-          button: 'left',
-          buttons: 1,
-          clickCount: 1,
-        };
-        const release = {
-          type: 'mouseReleased',
-          x: pt.x,
-          y: pt.y,
-          button: 'left',
-          buttons: 0,
-          clickCount: 1,
-        };
-        await chrome.debugger.sendCommand(
-          target,
-          'Input.dispatchMouseEvent',
-          move,
-        );
-        await chrome.debugger.sendCommand(
-          target,
-          'Input.dispatchMouseEvent',
-          press,
-        );
-        dispatched++;
-        await sleep(80);
-        await chrome.debugger.sendCommand(
-          target,
-          'Input.dispatchMouseEvent',
-          release,
-        );
-        completed++;
-        if (visualize) {
-          await showMarker(target, pt.x, pt.y, completed, points.length, true);
-        }
-        console.log(`[clickyphus] ${completed}/${points.length}`, pt);
-        if (completed < points.length) await sleep(intervalMs);
-      }
-      return { ok: true, tabId, completed, points };
-    } catch (error) {
-      console.error('[clickyphus] sweep interrupted', {
-        completed,
-        error,
-      });
-      throw Object.assign(new Error(error.message, { cause: error }), {
-        completed: dispatched,
-      });
-    } finally {
-      try {
-        await chrome.debugger.detach(target);
-      } catch (error) {
-        console.warn('[clickyphus] detach failed', error);
-      }
-    }
-  });
-}
-
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type !== 'CLICK_AT' && message?.type !== 'CLICK_GRID')
     return false;
   sendResponse({ ok: true, queued: true });
   const gridSize = message.type === 'CLICK_AT' ? 1 : getGridSize(message);
   // Give the popup time to close, then start the sweep.
-  clickGrid(
-    message.tabId,
-    message.x,
-    message.y,
-    gridSize,
-    message.step ?? 10,
-    message.intervalMs ?? 180,
-    600,
-    message.visualize !== false,
-  )
+  gridExecutor
+    .run({
+      tabId: message.tabId,
+      x: message.x,
+      y: message.y,
+      gridSize,
+      step: message.step ?? 10,
+      intervalMs: message.intervalMs ?? 180,
+      startDelayMs: 600,
+      visualize: message.visualize !== false,
+      onStart: (sweep) => recordSweep({ type: 'manual' }, sweep),
+    })
     .then((result) => console.log('[clickyphus] popup sweep completed', result))
     .catch((error) => console.error('[clickyphus] popup sweep failed', error));
   return false;
@@ -585,7 +254,7 @@ async function evaluateAutomaticRule(rule, tabId, sender) {
 }
 
 // One lifecycle for every automatic rule: reserve, evaluate, click, release
-// unsuccessful attempts. clickGrid owns input dispatch and debugger cleanup.
+// unsuccessful attempts. The grid executor owns input dispatch and debugger cleanup.
 async function runAutomaticRule(rule, sender, tab) {
   const tabId = sender.tab.id;
   let fired = autoFired.get(tabId);
@@ -610,23 +279,26 @@ async function runAutomaticRule(rule, sender, tab) {
   };
   let completed = 0;
   try {
-    const result = await clickGrid(
+    const result = await gridExecutor.run({
       tabId,
-      rule.x,
-      rule.y,
-      getGridSize(rule),
-      rule.step,
-      rule.intervalMs,
-      0,
-      rule.visualize,
+      x: rule.x,
+      y: rule.y,
+      gridSize: getGridSize(rule),
+      step: rule.step,
+      intervalMs: rule.intervalMs,
+      visualize: rule.visualize,
       shouldContinue,
-      {
-        type: ['expression', 'bundled'].includes(rule.ruleType)
-          ? rule.ruleType
-          : 'text',
-        ruleId: rule.id,
-      },
-    );
+      onStart: (sweep) =>
+        recordSweep(
+          {
+            type: ['expression', 'bundled'].includes(rule.ruleType)
+              ? rule.ruleType
+              : 'text',
+            ruleId: rule.id,
+          },
+          sweep,
+        ),
+    });
     completed = result.completed;
     return result;
   } catch (error) {
@@ -646,7 +318,7 @@ async function checkAutomaticRules(message, sender) {
   // JS belongs to the top-level document. Text can match inside any frame.
   if (
     expressionScan &&
-    (sender.frameId !== 0 || !sender.documentId || queues.has(tabId))
+    (sender.frameId !== 0 || !sender.documentId || gridExecutor.isBusy(tabId))
   )
     return;
   if (!(await isFocusedTab(tabId))) return;
@@ -654,7 +326,7 @@ async function checkAutomaticRules(message, sender) {
   const tab = await chrome.tabs.get(tabId);
   if (
     !tab.url ||
-    (expressionScan && (sender.url !== tab.url || queues.has(tabId)))
+    (expressionScan && (sender.url !== tab.url || gridExecutor.isBusy(tabId)))
   )
     return;
   const pending = [];

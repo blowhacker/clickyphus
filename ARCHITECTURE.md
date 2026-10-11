@@ -4,16 +4,17 @@ Clickyphus is a Chrome Manifest V3 extension. It runs manual coordinate clicks a
 
 ## Components
 
-| Component                         | Responsibility                                                                                                         |
-| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `extension/manifest.json`         | Registers the popup, background service worker, content scripts, and browser permissions.                              |
-| `extension/popup/popup.html`      | Rule editor and manual click controls.                                                                                 |
-| `extension/popup/popup.js`        | Loads and saves rules, validates input, starts manual clicks, and preserves drafts while picking coordinates.          |
-| `extension/popup/popup-layout.js` | Presents each rule as an expandable row with a compact summary.                                                        |
-| `extension/content/watcher.js`    | Watches page text in permitted frames and requests expression checks from the top-level frame.                         |
-| `extension/content/picker.js`     | Displays a coordinate-selection overlay in the top-level page.                                                         |
-| `extension/background.js`         | Coordinates messages, checks tab focus and rule conditions, serializes click jobs, and controls Chrome's debugger API. |
-| `scripts/package.py`              | Packages the extension directory into a versioned ZIP.                                                                 |
+| Component                         | Responsibility                                                                                                |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `extension/manifest.json`         | Registers the popup, background service worker, content scripts, and browser permissions.                     |
+| `extension/popup/popup.html`      | Rule editor and manual click controls.                                                                        |
+| `extension/popup/popup.js`        | Loads and saves rules, validates input, starts manual clicks, and preserves drafts while picking coordinates. |
+| `extension/popup/popup-layout.js` | Presents each rule as an expandable row with a compact summary.                                               |
+| `extension/content/watcher.js`    | Watches page text in permitted frames and requests expression checks from the top-level frame.                |
+| `extension/content/picker.js`     | Displays a coordinate-selection overlay in the top-level page.                                                |
+| `extension/background.js`         | Coordinates messages, evaluates rules, records history, and delegates sweeps to the grid executor.            |
+| `extension/grid-executor.js`      | Generates grid points, serializes sweeps, displays markers, and controls debugger input and cleanup.          |
+| `scripts/package.py`              | Packages the extension directory into a versioned ZIP.                                                        |
 
 ```mermaid
 flowchart TD
@@ -27,7 +28,8 @@ flowchart TD
     Worker -->|Save picked draft| Storage
     Worker -->|Check JS condition| Scripts[Chrome User Scripts API]
     Scripts -->|Compile in isolated world, execute in main world| Page[Target page]
-    Worker -->|Only after a matching condition| Debugger[Chrome debugger / DevTools Protocol]
+    Worker -->|Matching condition or manual request| Executor[Grid executor]
+    Executor -->|Attach, dispatch, detach| Debugger[Chrome debugger / DevTools Protocol]
     Debugger -->|Show markers, dispatch mouse input| Page
 ```
 
@@ -81,7 +83,9 @@ The fired set and job queues are service-worker memory, rather than durable stor
 
 ## Click execution
 
-Manual requests and automatic rules share `clickGrid`. Jobs run serially within each tab. Manual requests are acknowledged immediately, then wait 600 ms to let the popup close before execution.
+`grid-executor.js` exposes `createGridExecutor({ isFocusedTab })`, with `run(options)` and `isBusy(tabId)`. It owns per-tab serialization, geometry, markers, input timing, and debugger cleanup. The worker supplies a live continuation check and an optional `onStart` callback to record history; the executor does not read or write rule storage. Both manual and automatic requests use this executor.
+
+Manual requests and automatic rules share the grid executor. Jobs run serially within each tab. Manual requests are acknowledged immediately, then wait 600 ms to let the popup close before execution.
 
 The manual test panel sends its own X / Y fields; it does not evaluate automatic rules. For automatic expression rules, the worker resolves the returned coordinates before generating the grid and logs the resolved center. A `true` result uses saved rule coordinates, while a valid coordinate object overrides both axes.
 
