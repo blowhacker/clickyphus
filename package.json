@@ -1,5 +1,5 @@
 {
-  "name": "coordinate-click-companion",
+  "name": "clickyphus",
   "private": true,
   "scripts": {
     "test": "node --test tests/*.test.cjs",

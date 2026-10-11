@@ -1,16 +1,20 @@
 {
   "manifest_version": 3,
-  "name": "Coordinate Click Companion",
-  "version": "0.9.0",
+  "name": "Clickyphus",
+  "version": "0.10.0",
   "minimum_chrome_version": "138",
-  "description": "Manual and conditional coordinate grid clicks via Chrome DevTools Protocol.",
+  "description": "Let the mouse do the work. Manual clicks and automatic grids triggered by page text or JavaScript rules.",
   "permissions": ["debugger", "activeTab", "storage", "tabs", "userScripts"],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Coordinate Click",
-    "default_popup": "popup/popup.html"
+    "default_title": "Clickyphus",
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "assets/icon-16.png",
+      "32": "assets/icon-32.png"
+    }
   },
   "host_permissions": ["<all_urls>"],
   "content_scripts": [
@@ -21,5 +25,11 @@
       "match_about_blank": true,
       "run_at": "document_idle"
     }
-  ]
+  ],
+  "icons": {
+    "16": "assets/icon-16.png",
+    "32": "assets/icon-32.png",
+    "48": "assets/icon-48.png",
+    "128": "assets/icon-128.png"
+  }
 }

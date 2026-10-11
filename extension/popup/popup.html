@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Coordinate Click</title>
+    <title>Clickyphus</title>
     <style>
       * {
         box-sizing: border-box;
@@ -42,15 +42,21 @@
         border-bottom: 1px solid var(--line);
       }
       .brand-icon {
-        width: 34px;
-        height: 34px;
+        width: 64px;
+        height: 64px;
         flex: none;
         display: grid;
         place-items: center;
-        background: #1a2c28;
-        border: 1px solid #35564a;
-        border-radius: 11px;
-        color: var(--accent);
+      }
+      .brand-icon img {
+        width: 64px;
+        height: 64px;
+        object-fit: contain;
+      }
+      .brand-tagline {
+        margin: 3px 0 0;
+        color: var(--muted);
+        font-size: 12px;
       }
       .eyebrow {
         font: 10px/1.4 var(--mono);
@@ -480,21 +486,11 @@
   <body>
     <header class="intro">
       <div class="brand-icon" aria-hidden="true">
-        <svg
-          width="24"
-          height="24"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.5"
-        >
-          <circle cx="12" cy="12" r="6" />
-          <path d="M12 2v5m0 10v5M2 12h5m10 0h5" />
-          <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
-        </svg>
+        <img src="../assets/mascot.png" width="64" height="64" alt="" />
       </div>
       <div>
-        <h1>Coordinate Click</h1>
+        <h1>Clickyphus</h1>
+        <p class="brand-tagline">Let the mouse do the work.</p>
       </div>
     </header>
     <div class="bar">
@@ -680,7 +676,7 @@
         >
       </section>
     </template>
-    <p class="footer">Coordinate Click</p>
+    <p class="footer">Clickyphus</p>
     <div class="save-bar">
       <div class="bar">
         <span id="save-state" role="status">All changes saved</span

@@ -1,6 +1,10 @@
-# Coordinate Click Companion
+# Clickyphus
 
-Chrome extension for manual coordinate clicks and automatic grid sweeps triggered by URL and page text or JavaScript expressions.
+**Let the mouse do the work.**
+
+<img src="docs/assets/clickyphus.png" width="360" alt="Clickyphus hauling an enormous computer mouse uphill." />
+
+A browser companion for repetitive work: a Chrome extension for manual coordinate clicks and automatic grid sweeps triggered by URL and page text or JavaScript expressions.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the components, rule evaluation, click execution, and storage flows.
 
@@ -22,12 +26,12 @@ npm run format  # Apply formatting
 npm run build
 ```
 
-Creates `dist/coordinate-click-companion-<version>.zip` with only extension files.
+Creates `dist/clickyphus-<version>.zip` with only extension files.
 Packaging can also run directly with `python3 scripts/package.py`, without npm.
 
 ## JavaScript expression rules
 
-After reloading the updated extension, go to **chrome://extensions → Coordinate Click Companion → Details → Allow User Scripts** and turn it on. The popup offers an **Open extension settings** button when this is needed. If the setup message remains after reopening the popup, reload the extension and refresh the target page.
+After reloading the updated extension, go to **chrome://extensions → Clickyphus → Details → Allow User Scripts** and turn it on. The popup offers an **Open extension settings** button when this is needed. If the setup message remains after reopening the popup, reload the extension and refresh the target page.
 
 JS conditions are checked through Chrome's User Scripts API, without attaching the debugger. False results, errors, and missing permission do not show the debugging bar. Chrome's bar appears when a matching rule starts a click sequence. There is no fallback to debugger-based condition evaluation. Page DOM access, page globals, `console.log`, expressions, and blocks with `return` still work.
 
@@ -66,3 +70,7 @@ npm run test:browser
 ```
 
 This launches an isolated test profile, exercises the Allow User Scripts toggle, verifies false checks never attach the debugger, and tests matching DOM/page-global conditions under strict CSP and Trusted Types. It also checks permission revocation and text-rule behavior. Set `CHROMIUM_EXECUTABLE` to reuse an existing Chrome for Testing installation.
+
+## Development copy
+
+This project lives at `~/work/clickyphus`. The original `~/work/coordinate-click-companion` project remains separate. Load this copy’s `extension/` directory in Chrome to use Clickyphus. It has its own saved rules and permissions; enable Allow User Scripts for this copy if you use JavaScript rules.

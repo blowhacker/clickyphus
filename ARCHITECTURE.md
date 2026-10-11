@@ -1,6 +1,6 @@
 # Architecture
 
-Coordinate Click Companion is a Chrome Manifest V3 extension. It runs manual coordinate clicks and automatic click grids when a page meets a saved condition. There is no backend: configuration stays in Chrome local storage, and execution happens inside the browser.
+Clickyphus is a Chrome Manifest V3 extension. It runs manual coordinate clicks and automatic click grids when a page meets a saved condition. There is no backend: configuration stays in Chrome local storage, and execution happens inside the browser.
 
 ## Components
 
@@ -110,4 +110,4 @@ The manifest grants debugger, tab, active-tab, storage, userScripts, and all-URL
 
 Load `extension/` as an unpacked extension. After code changes, reload the extension and refresh open pages to replace their content scripts.
 
-`npm test` runs unit and regression tests. `npm run test:browser` runs the isolated Chrome integration test for User Scripts, strict page policies, permission changes, and debugger attachment. `npm run check` runs ESLint and Prettier checks. `npm run build` invokes the Python packaging script, which reads the manifest version and writes `dist/coordinate-click-companion-<version>.zip`. The archive contains extension files only; repository documentation and development dependencies are excluded.
+`npm test` runs unit and regression tests. `npm run test:browser` runs the isolated Chrome integration test for User Scripts, strict page policies, permission changes, and debugger attachment. `npm run check` runs ESLint and Prettier checks. `npm run build` invokes the Python packaging script, which reads the manifest version and writes `dist/clickyphus-<version>.zip`. The archive contains extension files only; repository documentation and development dependencies are excluded.

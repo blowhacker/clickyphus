@@ -10,7 +10,7 @@ def main():
     root = Path(__file__).resolve().parent.parent
     extension = root / "extension"
     manifest = json.loads((extension / "manifest.json").read_text())
-    output = root / "dist" / f"coordinate-click-companion-{manifest['version']}.zip"
+    output = root / "dist" / f"clickyphus-{manifest['version']}.zip"
     output.parent.mkdir(exist_ok=True)
     with ZipFile(output, "w", compression=ZIP_DEFLATED) as archive:
         for path in sorted(extension.rglob("*")):

@@ -78,7 +78,7 @@ function getGridSize(message) {
 // User-entered code is compiled in an isolated user-script world, then injected
 // directly in MAIN so DOM/page globals work even when the page forbids eval.
 const compiledRules = new Map();
-const compilerWorld = 'coordinate-click-compiler';
+const compilerWorld = 'clickyphus-compiler';
 
 async function getUserScriptsStatus() {
   try {
@@ -151,7 +151,7 @@ async function evaluateUserRule(tabId, documentId, expression) {
         const y = value.y ?? value.Y;
         return Number.isFinite(x) && Number.isFinite(y) && x >= 0 && y >= 0 ? { x, y } : false;
       } catch (error) {
-        console.warn('[coordinate-click] JS rule failed:', error);
+        console.warn('[clickyphus] JS rule failed:', error);
         return false;
       }
     })(${compiled})`,
@@ -175,7 +175,7 @@ async function evaluateUserRule(tabId, documentId, expression) {
 // pointer-events:none prevents the marker itself from swallowing clicks.
 async function showMarker(target, x, y, index, total, clicked = false) {
   const source = `(() => {
-    const id = '__coordinate_click_visualizer__';
+    const id = '__clickyphus_visualizer__';
     let host = document.getElementById(id);
     if (!host) {
       host = document.createElement('div');
@@ -219,7 +219,7 @@ async function showMarker(target, x, y, index, total, clicked = false) {
       returnByValue: true,
     });
   } catch (error) {
-    console.warn('[coordinate-click] overlay unavailable:', error.message);
+    console.warn('[clickyphus] overlay unavailable:', error.message);
   }
 }
 
@@ -332,7 +332,7 @@ async function clickGrid(
       }
       if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0) {
         console.warn(
-          '[coordinate-click] rule returned true but saved X/Y are invalid; return { x, y } or supply fallback coordinates',
+          '[clickyphus] rule returned true but saved X/Y are invalid; return { x, y } or supply fallback coordinates',
         );
         return {
           ok: true,
@@ -343,7 +343,7 @@ async function clickGrid(
         };
       }
       const points = pointsAround(x, y, gridSize, step);
-      console.log('[coordinate-click] resolved sweep center', {
+      console.log('[clickyphus] resolved sweep center', {
         tabId,
         x,
         y,
@@ -366,7 +366,7 @@ async function clickGrid(
         // Manual jobs have no guard and behave exactly as before.
         if (shouldContinue && !(await shouldContinue())) {
           console.log(
-            '[coordinate-click] AUTO STOP: matching text disappeared or frame unavailable',
+            '[clickyphus] AUTO STOP: matching text disappeared or frame unavailable',
             { tabId, completed, total: points.length },
           );
           return {
@@ -384,7 +384,7 @@ async function clickGrid(
         }
         // The page can change while the marker is shown; check again.
         if (shouldContinue && !(await shouldContinue())) {
-          console.log('[coordinate-click] AUTO STOP before mouse press', {
+          console.log('[clickyphus] AUTO STOP before mouse press', {
             tabId,
             completed,
           });
@@ -420,7 +420,7 @@ async function clickGrid(
               },
             })
             .catch((error) =>
-              console.warn('[coordinate-click] could not record sweep', error),
+              console.warn('[clickyphus] could not record sweep', error),
             );
         }
         const move = { type: 'mouseMoved', x: pt.x, y: pt.y };
@@ -461,12 +461,12 @@ async function clickGrid(
         if (visualize) {
           await showMarker(target, pt.x, pt.y, completed, points.length, true);
         }
-        console.log(`[coordinate-click] ${completed}/${points.length}`, pt);
+        console.log(`[clickyphus] ${completed}/${points.length}`, pt);
         if (completed < points.length) await sleep(intervalMs);
       }
       return { ok: true, tabId, completed, points };
     } catch (error) {
-      console.error('[coordinate-click] sweep interrupted', {
+      console.error('[clickyphus] sweep interrupted', {
         completed,
         error,
       });
@@ -477,7 +477,7 @@ async function clickGrid(
       try {
         await chrome.debugger.detach(target);
       } catch (error) {
-        console.warn('[coordinate-click] detach failed', error);
+        console.warn('[clickyphus] detach failed', error);
       }
     }
   });
@@ -499,12 +499,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     600,
     message.visualize !== false,
   )
-    .then((result) =>
-      console.log('[coordinate-click] popup sweep completed', result),
-    )
-    .catch((error) =>
-      console.error('[coordinate-click] popup sweep failed', error),
-    );
+    .then((result) => console.log('[clickyphus] popup sweep completed', result))
+    .catch((error) => console.error('[clickyphus] popup sweep failed', error));
   return false;
 });
 
@@ -592,7 +588,7 @@ async function checkExpressionRules(sender) {
     } catch (error) {
       if (!(error.completed > 0) && autoFired.get(tabId) === fired)
         fired.delete(rule.id);
-      console.warn('[coordinate-click] expression sweep failed', error);
+      console.warn('[clickyphus] expression sweep failed', error);
     }
   }
 }
@@ -600,7 +596,7 @@ async function checkExpressionRules(sender) {
 chrome.runtime.onMessage.addListener((message, sender) => {
   if (message?.type !== 'CHECK_EXPRESSION_RULES') return false;
   checkExpressionRules(sender).catch((error) =>
-    console.warn('[coordinate-click] expression check failed', error),
+    console.warn('[clickyphus] expression check failed', error),
   );
   return false;
 });
@@ -649,13 +645,13 @@ chrome.runtime.onMessage.addListener((message, sender) => {
           return response?.present === true;
         } catch (err) {
           console.log(
-            '[coordinate-click] text recheck failed; stopping',
+            '[clickyphus] text recheck failed; stopping',
             err.message,
           );
           return false;
         }
       };
-      console.log('[coordinate-click] AUTO MATCH', {
+      console.log('[clickyphus] AUTO MATCH', {
         tabId,
         ruleId: rule.id,
         frameId,
@@ -680,17 +676,15 @@ chrome.runtime.onMessage.addListener((message, sender) => {
             autoFired.get(tabId) === fired
           )
             fired.delete(rule.id);
-          console.log('[coordinate-click] AUTO FINISHED', rule.id, result);
+          console.log('[clickyphus] AUTO FINISHED', rule.id, result);
         })
         .catch((error) => {
           if (!(error.completed > 0) && autoFired.get(tabId) === fired)
             fired.delete(rule.id);
-          console.error('[coordinate-click] AUTO FAILED', rule.id, error);
+          console.error('[clickyphus] AUTO FAILED', rule.id, error);
         });
     }
-  })().catch((error) =>
-    console.warn('[coordinate-click] rule check failed', error),
-  );
+  })().catch((error) => console.warn('[clickyphus] rule check failed', error));
   return false;
 });
 
@@ -780,9 +774,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
           /* Coordinates remain available when the user reopens the popup. */
         }
       }
-    })().catch((error) =>
-      console.warn('[coordinate-click] picker failed', error),
-    );
+    })().catch((error) => console.warn('[clickyphus] picker failed', error));
   }
   return false;
 });
