@@ -18,7 +18,7 @@ function drawClickMarker(x, y, index, total, clicked) {
   v.style.cssText = `position:absolute;left:${x}px;top:${y - 16}px;height:32px;border-left:1px solid #ff214f`;
   const label = document.createElement('div');
   label.textContent = `${index}/${total} (${x},${y})`;
-  label.style.cssText = `position:absolute;left:${x - 18}px;top:${y + 13}px;transform:translateX(-100%);background:#151515;color:#fff;border:1px solid #ff214f;padding:3px 6px;border-radius:4px;white-space:nowrap;font:12px monospace`;
+  label.style.cssText = `position:fixed;left:16px;bottom:16px;background:#151515;color:#fff;border:1px solid #ff214f;padding:3px 6px;border-radius:4px;white-space:nowrap;font:12px monospace`;
   host.replaceChildren(dot, h, v, label);
   // Use the click index so aim and fire share a pose and each sweep restarts.
   const phase = (index - 1) % 12;
