@@ -1,5 +1,6 @@
-/* global defaultRules, createGridExecutor */
-importScripts('bundled-rules.js', 'grid-executor.js');
+/* global defaultRules, createGridExecutor, createRuleEvaluator */
+importScripts('bundled-rules.js', 'rule-evaluation.js', 'grid-executor.js');
+const evaluateAutomaticRule = createRuleEvaluator({ defaultRules });
 
 // Defaults are copied into local storage once; later edits belong to the user.
 async function installDefaultRules(details) {
@@ -82,11 +83,6 @@ function getGridSize(message) {
   return message.gridSize ?? (message.radius ?? 1) * 2 + 1;
 }
 
-// User-entered code is compiled in an isolated user-script world, then injected
-// directly in MAIN so DOM/page globals work even when the page forbids eval.
-const compiledRules = new Map();
-const compilerWorld = 'clickyphus-compiler';
-
 async function getUserScriptsStatus() {
   try {
     if (!chrome.userScripts?.execute) return { available: false };
@@ -102,103 +98,6 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   getUserScriptsStatus().then(respond);
   return true;
 });
-
-async function evaluateBundledRule(tabId, documentId, ruleId) {
-  if (!ruleId) return false;
-  const [evaluation] = await chrome.scripting.executeScript({
-    target: { tabId, documentIds: [documentId] },
-    world: 'MAIN',
-    func: defaultRules,
-    args: [ruleId],
-    // Don't defer checks until all images finish loading.
-    injectImmediately: true,
-  });
-  if (evaluation?.documentId !== documentId) return false;
-  const value = evaluation.result;
-  if (value === true) return true;
-  return value &&
-    Number.isFinite(value.x) &&
-    Number.isFinite(value.y) &&
-    value.x >= 0 &&
-    value.y >= 0
-    ? { x: value.x, y: value.y }
-    : false;
-}
-
-async function evaluateUserRule(tabId, documentId, expression) {
-  if (!chrome.userScripts?.execute) return false;
-  const target = { tabId, documentIds: [documentId] };
-  let compiled = compiledRules.get(expression);
-  if (!compiled) {
-    await chrome.userScripts.configureWorld({
-      worldId: compilerWorld,
-      csp: "script-src 'self' 'unsafe-eval'; object-src 'none'",
-      messaging: false,
-    });
-    const [compilation] = await chrome.userScripts.execute({
-      target,
-      world: 'USER_SCRIPT',
-      worldId: compilerWorld,
-      js: [
-        {
-          code: `(() => {
-        const source = ${JSON.stringify(expression)};
-        let evaluate;
-        try {
-          evaluate = new Function(${JSON.stringify('return (\n')} + source + ${JSON.stringify('\n);')});
-        } catch (error) {
-          if (!(error instanceof SyntaxError)) throw error;
-          evaluate = new Function(source);
-        }
-        return evaluate.toString();
-      })()`,
-        },
-      ],
-    });
-    if (
-      compilation?.error ||
-      compilation?.documentId !== documentId ||
-      typeof compilation.result !== 'string'
-    )
-      return false;
-    compiled = compilation.result;
-    if (compiledRules.size >= 100)
-      compiledRules.delete(compiledRules.keys().next().value);
-    compiledRules.set(expression, compiled);
-  }
-  const [evaluation] = await chrome.userScripts.execute({
-    target,
-    world: 'MAIN',
-    js: [
-      {
-        code: `((evaluate) => {
-      try {
-        const value = evaluate.call(window);
-        if (value === true) return true;
-        if (!value || typeof value !== 'object' || typeof value.then === 'function') return false;
-        const x = value.x ?? value.X;
-        const y = value.y ?? value.Y;
-        return Number.isFinite(x) && Number.isFinite(y) && x >= 0 && y >= 0 ? { x, y } : false;
-      } catch (error) {
-        console.warn('[clickyphus] JS rule failed:', error);
-        return false;
-      }
-    })(${compiled})`,
-      },
-    ],
-  });
-  if (evaluation?.error || evaluation?.documentId !== documentId) return false;
-  const value = evaluation.result;
-  if (value === true) return true;
-  return value &&
-    typeof value === 'object' &&
-    Number.isFinite(value.x) &&
-    Number.isFinite(value.y) &&
-    value.x >= 0 &&
-    value.y >= 0
-    ? { x: value.x, y: value.y }
-    : false;
-}
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type !== 'CLICK_AT' && message?.type !== 'CLICK_GRID')
@@ -232,26 +131,6 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     recheckFocusedTab(tabId);
 });
 chrome.tabs.onRemoved.addListener((tabId) => autoFired.delete(tabId));
-
-// Each adapter returns false, true (saved center), or a computed center.
-async function evaluateAutomaticRule(rule, tabId, sender) {
-  if (rule.ruleType === 'expression')
-    return evaluateUserRule(tabId, sender.documentId, rule.expression);
-  if (rule.ruleType === 'bundled')
-    return evaluateBundledRule(tabId, sender.documentId, rule.builtinId);
-  const target = sender.documentId
-    ? { documentId: sender.documentId }
-    : { frameId: sender.frameId ?? 0 };
-  const response = await chrome.tabs.sendMessage(
-    tabId,
-    {
-      type: 'CHECK_TEXT_PRESENT',
-      textMatch: rule.textMatch.trim().toLowerCase(),
-    },
-    target,
-  );
-  return response?.present === true;
-}
 
 // One lifecycle for every automatic rule: reserve, evaluate, click, release
 // unsuccessful attempts. The grid executor owns input dispatch and debugger cleanup.

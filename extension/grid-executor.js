@@ -149,7 +149,7 @@ function createGridExecutor({ isFocusedTab }) {
             tabId,
             completed: 0,
           };
-        const center = condition === true ? { x, y } : condition;
+        const center = condition;
         if (
           !Number.isFinite(center.x) ||
           !Number.isFinite(center.y) ||
@@ -178,7 +178,7 @@ function createGridExecutor({ isFocusedTab }) {
       let completed = 0;
       let dispatched = 0;
       try {
-        // Resolve an expression-provided center once; keep the grid fixed during
+        // Resolve the evaluated center once; keep the grid fixed during
         // this sweep while continuing to recheck the condition before clicks.
         if (shouldContinue) {
           const condition = await shouldContinue();
@@ -191,15 +191,11 @@ function createGridExecutor({ isFocusedTab }) {
               completed: 0,
             };
           }
-          if (typeof condition === 'object') {
-            x = condition.x;
-            y = condition.y;
-          }
+          x = condition.x;
+          y = condition.y;
         }
         if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0) {
-          console.warn(
-            '[clickyphus] rule returned true but saved X/Y are invalid; return { x, y } or supply fallback coordinates',
-          );
+          console.warn('[clickyphus] invalid sweep center');
           return {
             ok: true,
             stopped: true,

@@ -12,7 +12,8 @@ Clickyphus is a Chrome Manifest V3 extension. It runs manual coordinate clicks a
 | `extension/popup/popup-layout.js` | Presents each rule as an expandable row with a compact summary.                                               |
 | `extension/content/watcher.js`    | Watches page text in permitted frames and requests expression checks from the top-level frame.                |
 | `extension/content/picker.js`     | Displays a coordinate-selection overlay in the top-level page.                                                |
-| `extension/background.js`         | Coordinates messages, evaluates rules, records history, and delegates sweeps to the grid executor.            |
+| `extension/background.js`         | Coordinates messages, reservations, navigation, history, and sweep execution.                                 |
+| `extension/rule-evaluation.js`    | Executes text, bundled JS, and custom JS conditions and returns a valid center or false.                      |
 | `extension/grid-executor.js`      | Generates grid points, serializes sweeps, displays markers, and controls debugger input and cleanup.          |
 | `scripts/package.py`              | Packages the extension directory into a versioned ZIP.                                                        |
 
@@ -39,7 +40,9 @@ The popup shows only the selected condition type and preserves the other type's 
 
 ## Automatic rules
 
-All automatic notifications enter `checkAutomaticRules`, which selects eligible rules. Each selected rule runs through `runAutomaticRule`: reserve its ID, evaluate through `evaluateAutomaticRule`, execute the existing grid, and retain or release the reservation according to whether input was sent. Text, bundled JS, and custom JS have small condition adapters; navigation checks, retries, and completion tracking share one lifecycle. Text notifications can reserve queued matches from any frame; JS scans remain top-level and pause while a click job is active.
+All automatic notifications enter `checkAutomaticRules`, which selects eligible rules. Each selected rule runs through `runAutomaticRule`: reserve its ID, evaluate through the evaluator in `rule-evaluation.js`, execute the existing grid, and retain or release the reservation according to whether input was sent. Text, bundled JS, and custom JS have small condition adapters inside the evaluator; navigation checks, retries, and completion tracking share one lifecycle. Text notifications can reserve queued matches from any frame; JS scans remain top-level and pause while a click job is active.
+
+The evaluator returns `false` for a non-match or invalid coordinates, and `{ x, y }` for a match. It converts a condition returning `true` to the saved center. The runner manages lifecycle and the executor receives only resolved centers. Page-side JS normalization still rejects promises before Chrome can await or serialize them.
 
 On the runtime `onInstalled` event with reason `install`, the worker reads the metadata from bundled `default-rules.js` and seeds `autoRules` only if no current or legacy rules or draft exist. Updates and reloads skip seeding, including when the user has intentionally saved an empty list. The top-level RULES array is editable in source, with a commented template for additional rules, and uses the same schema as popup-saved rules.
 
@@ -71,7 +74,7 @@ Expressions run in the top-level page context, with access to its DOM and JavaSc
 return document.querySelector('button.ready') !== null;
 ```
 
-After a successful preflight, the condition and center are checked again after debugger attachment, since the Chrome banner can change the viewport layout. The grid center is then fixed for that sweep. The same expression is checked before every click, and again after showing a marker. A false result or error stops the sequence. Expressions should have no side effects because evaluation repeats. Expression checks are skipped while the tab already has a queued click job.
+After a successful preflight, the condition and center are checked again after debugger attachment, since the Chrome banner can change the viewport layout. The grid center is then fixed for that sweep. The same expression is checked before every click, and again after showing a marker. A false result or error stops the sequence. Expressions should have no side effects because evaluation repeats. Expression checks wait for the tab’s click queue before revalidating the current page.
 
 ### Repeat prevention and focus
 
@@ -83,15 +86,17 @@ The fired set and job queues are service-worker memory, rather than durable stor
 
 ## Click execution
 
-`grid-executor.js` exposes `createGridExecutor({ isFocusedTab })`, with `run(options)` and `isBusy(tabId)`. It owns per-tab serialization, geometry, markers, input timing, and debugger cleanup. The worker supplies a live continuation check and an optional `onStart` callback to record history; the executor does not read or write rule storage. Both manual and automatic requests use this executor.
+`grid-executor.js` exposes `createGridExecutor({ isFocusedTab })`, with `run(options)`, `whenIdle(tabId)`, and `isBusy(tabId)`. Automatic continuation checks return only `false` or `{ x, y }`; the evaluator resolves saved-coordinate fallbacks before execution. It owns per-tab serialization, geometry, markers, input timing, and debugger cleanup. The worker supplies a live continuation check and an optional `onStart` callback to record history; the executor does not read or write rule storage. Both manual and automatic requests use this executor.
 
 Manual requests and automatic rules share the grid executor. Jobs run serially within each tab. Manual requests are acknowledged immediately, then wait 600 ms to let the popup close before execution.
 
-The manual test panel sends its own X / Y fields; it does not evaluate automatic rules. For automatic expression rules, the worker resolves the returned coordinates before generating the grid and logs the resolved center. A `true` result uses saved rule coordinates, while a valid coordinate object overrides both axes.
+The manual test panel sends its own X / Y fields; it does not evaluate automatic rules. For automatic expression rules, the evaluator resolves the returned coordinates and the executor generates the grid and logs its center. A `true` result uses saved rule coordinates, while a valid coordinate object overrides both axes.
 
-The worker validates the click settings, builds a square grid around the requested point, rounds coordinates to CSS pixels, and skips negative coordinates. Points are sorted by distance from the requested center. A grid size of one produces a single click.
+The executor validates the click settings, builds a square grid around the requested point, rounds coordinates to CSS pixels, and skips negative coordinates. Points are sorted by distance from the requested center. A grid size of one produces a single click.
 
-For each point, the worker checks focus and any automatic condition, optionally draws a marker, and sends mouse move, press, and release commands using `Input.dispatchMouseEvent`. This sends browser input rather than calling an element's DOM `click()` method. Coordinates are relative to the top-level viewport, allowing clicks over nested frames without resolving a target element.
+For each point, the executor checks focus and any automatic condition, optionally draws a marker, and sends mouse move, press, and release commands using `Input.dispatchMouseEvent`. This sends browser input rather than calling an element's DOM `click()` method. Coordinates are relative to the top-level viewport, allowing clicks over nested frames without resolving a target element.
+
+Markers are extension-owned page code passed as a string to the debugger’s `Runtime.evaluate`: the service worker has no page DOM. Rule conditions use the separate evaluator and do not attach the debugger when they fail.
 
 The debugger is detached in a `finally` block after an attached job finishes or fails. Manual jobs have no rule-condition guard, but still stop when the target loses focus.
 

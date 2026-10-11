@@ -458,15 +458,21 @@ test('bundled condition executes without User Scripts and normalizes DOM coordin
       ];
     },
   };
-  const result = await context.evaluateBundledRule(
-    1,
-    'original-document',
-    'example-js-target',
-  );
+  const evaluate = context.createRuleEvaluator({
+    defaultRules: context.defaultRules,
+  });
+  const rule = {
+    ruleType: 'bundled',
+    builtinId: 'example-js-target',
+    x: 1,
+    y: 2,
+  };
+  const sender = { documentId: 'original-document' };
+  const result = await evaluate(rule, 1, sender);
   assert.equal(result.x, 70);
   assert.equal(result.y, 110);
   assert.equal(
-    await context.evaluateBundledRule(1, 'original-document', 'unknown-id'),
+    await evaluate({ ...rule, builtinId: 'unknown-id' }, 1, sender),
     false,
   );
 });

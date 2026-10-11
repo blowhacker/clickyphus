@@ -16,7 +16,11 @@ export default [
     },
   },
   {
-    files: ['extension/background.js', 'extension/grid-executor.js'],
+    files: [
+      'extension/background.js',
+      'extension/grid-executor.js',
+      'extension/rule-evaluation.js',
+    ],
     languageOptions: {
       globals: {
         ...Object.fromEntries(
