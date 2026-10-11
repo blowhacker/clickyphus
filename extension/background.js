@@ -564,180 +564,131 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 });
 chrome.tabs.onRemoved.addListener((tabId) => autoFired.delete(tabId));
 
-// The watcher wakes the worker; all expression checks use User Scripts.
-async function checkExpressionRules(sender) {
-  if (sender.frameId !== 0 || !sender.documentId) return;
-  const tabId = sender.tab?.id;
-  if (
-    !Number.isInteger(tabId) ||
-    queues.has(tabId) ||
-    !(await isFocusedTab(tabId))
-  )
-    return;
-  const { autoRules = [] } = await chrome.storage.local.get('autoRules');
-  const tab = await chrome.tabs.get(tabId);
-  if (!tab.url || sender.url !== tab.url || queues.has(tabId)) return;
-  for (const rule of autoRules) {
-    if (
-      !rule.enabled ||
-      !['expression', 'bundled'].includes(rule.ruleType) ||
-      (rule.ruleType === 'expression' && !rule.expression?.trim()) ||
-      !matchesRuleUrl(tab.url, rule.urlMatch)
-    )
-      continue;
-    let fired = autoFired.get(tabId);
-    if (!fired) {
-      fired = new Set();
-      autoFired.set(tabId, fired);
-    }
-    if (fired.has(rule.id)) continue;
-    const expectedUrl = tab.url;
-    const shouldContinue = async () => {
-      try {
-        if (
-          autoFired.get(tabId) !== fired ||
-          (await chrome.tabs.get(tabId)).url !== expectedUrl
-        )
-          return false;
-        const value =
-          rule.ruleType === 'bundled'
-            ? await evaluateBundledRule(
-                tabId,
-                sender.documentId,
-                rule.builtinId,
-              )
-            : await evaluateUserRule(tabId, sender.documentId, rule.expression);
-        if (
-          !value ||
-          autoFired.get(tabId) !== fired ||
-          (await chrome.tabs.get(tabId)).url !== expectedUrl
-        )
-          return false;
-        fired.add(rule.id);
-        return value;
-      } catch {
-        return false;
-      }
-    };
+// Each adapter returns false, true (saved center), or a computed center.
+async function evaluateAutomaticRule(rule, tabId, sender) {
+  if (rule.ruleType === 'expression')
+    return evaluateUserRule(tabId, sender.documentId, rule.expression);
+  if (rule.ruleType === 'bundled')
+    return evaluateBundledRule(tabId, sender.documentId, rule.builtinId);
+  const target = sender.documentId
+    ? { documentId: sender.documentId }
+    : { frameId: sender.frameId ?? 0 };
+  const response = await chrome.tabs.sendMessage(
+    tabId,
+    {
+      type: 'CHECK_TEXT_PRESENT',
+      textMatch: rule.textMatch.trim().toLowerCase(),
+    },
+    target,
+  );
+  return response?.present === true;
+}
+
+// One lifecycle for every automatic rule: reserve, evaluate, click, release
+// unsuccessful attempts. clickGrid owns input dispatch and debugger cleanup.
+async function runAutomaticRule(rule, sender, tab) {
+  const tabId = sender.tab.id;
+  let fired = autoFired.get(tabId);
+  if (!fired) {
+    fired = new Set();
+    autoFired.set(tabId, fired);
+  }
+  if (fired.has(rule.id)) return;
+  fired.add(rule.id);
+  const expectedUrl = tab.url;
+  const isCurrentPage = async () =>
+    autoFired.get(tabId) === fired &&
+    (await chrome.tabs.get(tabId)).url === expectedUrl;
+  const shouldContinue = async () => {
     try {
-      const result = await clickGrid(
-        tabId,
-        rule.x,
-        rule.y,
-        getGridSize(rule),
-        rule.step,
-        rule.intervalMs,
-        0,
-        rule.visualize,
-        shouldContinue,
-        { type: rule.ruleType, ruleId: rule.id },
-      );
-      if (
-        result.stopped &&
-        result.completed === 0 &&
-        autoFired.get(tabId) === fired
-      )
-        fired.delete(rule.id);
-    } catch (error) {
-      if (!(error.completed > 0) && autoFired.get(tabId) === fired)
-        fired.delete(rule.id);
-      console.warn('[clickyphus] expression sweep failed', error);
+      if (!(await isCurrentPage())) return false;
+      const value = await evaluateAutomaticRule(rule, tabId, sender);
+      return value && (await isCurrentPage()) ? value : false;
+    } catch {
+      return false;
     }
+  };
+  let completed = 0;
+  try {
+    const result = await clickGrid(
+      tabId,
+      rule.x,
+      rule.y,
+      getGridSize(rule),
+      rule.step,
+      rule.intervalMs,
+      0,
+      rule.visualize,
+      shouldContinue,
+      {
+        type: ['expression', 'bundled'].includes(rule.ruleType)
+          ? rule.ruleType
+          : 'text',
+        ruleId: rule.id,
+      },
+    );
+    completed = result.completed;
+    return result;
+  } catch (error) {
+    // Input may have reached the page even if a later command failed.
+    completed = error.completed || 0;
+    console.warn('[clickyphus] automatic sweep failed', rule.id, error);
+  } finally {
+    if (completed === 0 && autoFired.get(tabId) === fired)
+      fired.delete(rule.id);
   }
 }
 
-chrome.runtime.onMessage.addListener((message, sender) => {
-  if (message?.type !== 'CHECK_EXPRESSION_RULES') return false;
-  checkExpressionRules(sender).catch((error) =>
-    console.warn('[clickyphus] expression check failed', error),
-  );
-  return false;
-});
-
-chrome.runtime.onMessage.addListener((message, sender) => {
-  if (message?.type !== 'AUTO_TEXT_FOUND') return false;
-  (async () => {
-    const tabId = sender.tab?.id;
-    if (!Number.isInteger(tabId) || !(await isFocusedTab(tabId))) return;
-    const { autoRules = [] } = await chrome.storage.local.get('autoRules');
-    const tab = await chrome.tabs.get(tabId);
-    if (!tab.url) return;
-    for (const rule of autoRules) {
+async function checkAutomaticRules(message, sender) {
+  const expressionScan = message.type === 'CHECK_EXPRESSION_RULES';
+  const tabId = sender.tab?.id;
+  if (!Number.isInteger(tabId)) return;
+  // JS belongs to the top-level document. Text can match inside any frame.
+  if (
+    expressionScan &&
+    (sender.frameId !== 0 || !sender.documentId || queues.has(tabId))
+  )
+    return;
+  if (!(await isFocusedTab(tabId))) return;
+  const { autoRules = [] } = await chrome.storage.local.get('autoRules');
+  const tab = await chrome.tabs.get(tabId);
+  if (
+    !tab.url ||
+    (expressionScan && (sender.url !== tab.url || queues.has(tabId)))
+  )
+    return;
+  const pending = [];
+  for (const rule of autoRules) {
+    if (!rule.enabled || !matchesRuleUrl(tab.url, rule.urlMatch)) continue;
+    const scripted = ['expression', 'bundled'].includes(rule.ruleType);
+    if (expressionScan) {
       if (
-        ['expression', 'bundled'].includes(rule.ruleType) ||
-        !rule.enabled ||
-        !rule.textMatch?.trim()
+        !scripted ||
+        (rule.ruleType === 'expression' && !rule.expression?.trim())
       )
         continue;
-      if (!matchesRuleUrl(tab.url, rule.urlMatch)) continue;
-      if (rule.textMatch.toLowerCase() !== message.textMatch) continue;
-      // Guard synchronously before starting the asynchronous sweep.
-      let fired = autoFired.get(tabId);
-      if (!fired) {
-        fired = new Set();
-        autoFired.set(tabId, fired);
-      }
-      if (fired.has(rule.id)) continue;
-      fired.add(rule.id);
-      const frameId = sender.frameId ?? 0;
-      const documentId = sender.documentId;
-      const expectedUrl = tab.url;
-      const needle = rule.textMatch.trim().toLowerCase();
-      // Bind the guard to the document that originally matched. If it navigates,
-      // disappears, or stops containing the phrase, treat that as a stop signal.
-      const shouldContinue = async () => {
-        try {
-          const currentTab = await chrome.tabs.get(tabId);
-          if (currentTab.url !== expectedUrl) return false;
-          const options = documentId ? { documentId } : { frameId };
-          const response = await chrome.tabs.sendMessage(
-            tabId,
-            { type: 'CHECK_TEXT_PRESENT', textMatch: needle },
-            options,
-          );
-          return response?.present === true;
-        } catch (err) {
-          console.log(
-            '[clickyphus] text recheck failed; stopping',
-            err.message,
-          );
-          return false;
-        }
-      };
-      console.log('[clickyphus] AUTO MATCH', {
-        tabId,
-        ruleId: rule.id,
-        frameId,
-        url: tab.url,
-      });
-      clickGrid(
-        tabId,
-        rule.x,
-        rule.y,
-        rule.gridSize ?? rule.radius * 2 + 1,
-        rule.step,
-        rule.intervalMs,
-        0,
-        rule.visualize,
-        shouldContinue,
-        { type: 'text', ruleId: rule.id },
-      )
-        .then((result) => {
-          if (
-            result.stopped &&
-            result.completed === 0 &&
-            autoFired.get(tabId) === fired
-          )
-            fired.delete(rule.id);
-          console.log('[clickyphus] AUTO FINISHED', rule.id, result);
-        })
-        .catch((error) => {
-          if (!(error.completed > 0) && autoFired.get(tabId) === fired)
-            fired.delete(rule.id);
-          console.error('[clickyphus] AUTO FAILED', rule.id, error);
-        });
+    } else if (
+      scripted ||
+      !rule.textMatch?.trim() ||
+      rule.textMatch.toLowerCase() !== message.textMatch
+    ) {
+      continue;
     }
-  })().catch((error) => console.warn('[clickyphus] rule check failed', error));
+    const run = runAutomaticRule(rule, sender, tab);
+    // Preserve admission behavior: text notifications reserve queued matches;
+    // JS scans evaluate successive rules after the preceding sweep finishes.
+    if (expressionScan) await run;
+    else pending.push(run);
+  }
+  await Promise.all(pending);
+}
+
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (!['CHECK_EXPRESSION_RULES', 'AUTO_TEXT_FOUND'].includes(message?.type))
+    return false;
+  checkAutomaticRules(message, sender).catch((error) =>
+    console.warn('[clickyphus] automatic rule check failed', error),
+  );
   return false;
 });
 

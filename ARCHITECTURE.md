@@ -37,6 +37,8 @@ The popup shows only the selected condition type and preserves the other type's 
 
 ## Automatic rules
 
+All automatic notifications enter `checkAutomaticRules`, which selects eligible rules. Each selected rule runs through `runAutomaticRule`: reserve its ID, evaluate through `evaluateAutomaticRule`, execute the existing grid, and retain or release the reservation according to whether input was sent. Text, bundled JS, and custom JS have small condition adapters; navigation checks, retries, and completion tracking share one lifecycle. Text notifications can reserve queued matches from any frame; JS scans remain top-level and pause while a click job is active.
+
 On the runtime `onInstalled` event with reason `install`, the worker reads the metadata from bundled `default-rules.js` and seeds `autoRules` only if no current or legacy rules or draft exist. Updates and reloads skip seeding, including when the user has intentionally saved an empty list. The top-level RULES array is editable in source, with a commented template for additional rules, and uses the same schema as popup-saved rules.
 
 Every rule includes an enabled flag, URL substring, condition, viewport coordinates, grid size, spacing, click delay, and marker preference. URL matching is case insensitive and uses the top-level tab URL. A blank URL filter (including whitespace) or `*` matches all supported pages; other values are literal substrings, not wildcard patterns. Rules without a `ruleType` retain the original text behavior.

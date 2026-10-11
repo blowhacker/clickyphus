@@ -175,7 +175,7 @@ async function runRule(
     url: tab.url,
     tab: { id: 1 },
   };
-  await context.checkExpressionRules(sender);
+  await context.checkAutomaticRules({ type: 'CHECK_EXPRESSION_RULES' }, sender);
   assert.equal(attached, false, 'debugger must be detached after the check');
   return {
     presses,
@@ -295,7 +295,7 @@ for (const intervalMs of [0, 30]) {
 test('false conditions never attach the debugger, including repeated polls', async () => {
   const { context, sender, events, evaluations } = await runRule('false');
   assert.ok(evaluations > 0);
-  await context.checkExpressionRules(sender);
+  await context.checkAutomaticRules({ type: 'CHECK_EXPRESSION_RULES' }, sender);
   assert.equal(events.includes('attach'), false);
   assert.equal(
     events.filter((event) => event === 'USER_SCRIPT').length,
@@ -346,8 +346,8 @@ test('condition rechecked after attachment can stop before first click', async (
 test('a false condition can later become true, and fires only once', async () => {
   const { context, sender, page, presses } = await runRule('!ready');
   page.ready = false;
-  await context.checkExpressionRules(sender);
-  await context.checkExpressionRules(sender);
+  await context.checkAutomaticRules({ type: 'CHECK_EXPRESSION_RULES' }, sender);
+  await context.checkAutomaticRules({ type: 'CHECK_EXPRESSION_RULES' }, sender);
   assert.equal(presses.length, 1);
 });
 
@@ -361,9 +361,9 @@ test('transient first-navigation attachment failure retries without refresh', as
     attachFailures: 1,
   });
   assert.equal(presses.length, 0);
-  await context.checkExpressionRules(sender);
+  await context.checkAutomaticRules({ type: 'CHECK_EXPRESSION_RULES' }, sender);
   assert.equal(presses.length, 1);
-  await context.checkExpressionRules(sender);
+  await context.checkAutomaticRules({ type: 'CHECK_EXPRESSION_RULES' }, sender);
   assert.equal(presses.length, 1);
 });
 
@@ -373,7 +373,7 @@ test('failure after a mouse press does not cause a duplicate automatic click', a
   });
   assert.equal(presses.length, 1);
   page.ready = true;
-  await context.checkExpressionRules(sender);
+  await context.checkAutomaticRules({ type: 'CHECK_EXPRESSION_RULES' }, sender);
   assert.equal(presses.length, 1);
 });
 
