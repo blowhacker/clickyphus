@@ -11,6 +11,7 @@ After changes, reload the extension and refresh open pages.
 
 ```sh
 npm ci
+npm test        # Rule evaluation and click-coordinate regression checks
 npm run check   # Lint and check formatting
 npm run format  # Apply formatting
 ```
@@ -40,3 +41,15 @@ return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
 ```
 
 The returned coordinates set the grid center at the start of the sweep. Grid size, spacing, and delay still use the rule settings. The condition is rechecked before clicks, but later coordinate results do not move the grid mid-sweep.
+
+To use computed coordinates, save the automatic rule and let it trigger on the focused page. The manual **Run manual click** button uses the manual X / Y fields and does not evaluate automatic rules. The popup's expandable **Last click** section shows the execution source (JS rule, text rule, or manual), resolved grid center, first click position, and version that executed it. The current loaded version also appears in the footer. The background worker's `resolved sweep center` log shows the actual center selected after evaluating a rule.
+
+For grid size **1 × 1**, spacing and delay are disabled and ignored. Larger grids require valid spacing and delay values.
+
+Grid delay accepts whole numbers from 0 to 5000 ms, including 30 ms. This pause is added after releasing the mouse button; each click also includes an 80 ms button hold, and visual markers add time when enabled.
+
+## Editing rules
+
+Only the selected rule type's condition fields are shown. Switching between page text and JavaScript keeps both inputs, and JS rules label saved coordinates as fallback values. New rules start with a single click; select a larger pattern to reveal spacing and pause controls. Grid sizes from 1 to 20 are available.
+
+Use the shared **Save changes** button to apply edits, enable/disable changes, and removals. The footer tracks unsaved changes, and validation points to the affected field. Removing a rule can be undone before saving. Ordinary unsaved edits are discarded when the popup closes; coordinate picking preserves a draft so editing can continue afterward.

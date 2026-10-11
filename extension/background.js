@@ -137,14 +137,18 @@ async function clickGrid(
   startDelayMs = 0,
   visualize = true,
   shouldContinue = null,
+  source = { type: 'manual' },
 ) {
+  // Spacing and delay have no effect on a single click.
+  if (gridSize === 1) {
+    step = 10;
+    intervalMs = 180;
+  }
   if (
     !Number.isInteger(tabId) ||
     tabId < 0 ||
-    !Number.isFinite(x) ||
-    !Number.isFinite(y) ||
-    x < 0 ||
-    y < 0 ||
+    (!shouldContinue &&
+      (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0)) ||
     !Number.isInteger(gridSize) ||
     gridSize < 1 ||
     gridSize > 20 ||
@@ -152,11 +156,11 @@ async function clickGrid(
     step < 1 ||
     step > 100 ||
     !Number.isInteger(intervalMs) ||
-    intervalMs < 80 ||
+    intervalMs < 0 ||
     intervalMs > 5000
   ) {
     throw new Error(
-      'Invalid tab, coordinates, grid size (1–20), step (1–100), or interval (80–5000ms)',
+      'Invalid tab, coordinates, grid size (1–20), step (1–100), or interval (0–5000ms)',
     );
   }
 
@@ -172,15 +176,6 @@ async function clickGrid(
       };
     }
     const target = { tabId };
-    let points = pointsAround(x, y, gridSize, step);
-    console.log('[coordinate-click] attaching for sweep', {
-      tabId,
-      x,
-      y,
-      gridSize,
-      step,
-      count: points.length,
-    });
     await chrome.debugger.attach(target, '1.3');
     let completed = 0;
     try {
@@ -198,9 +193,31 @@ async function clickGrid(
           };
         }
         if (typeof condition === 'object') {
-          points = pointsAround(condition.x, condition.y, gridSize, step);
+          x = condition.x;
+          y = condition.y;
         }
       }
+      if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0) {
+        console.warn(
+          '[coordinate-click] rule returned true but saved X/Y are invalid; return { x, y } or supply fallback coordinates',
+        );
+        return {
+          ok: true,
+          stopped: true,
+          reason: 'invalid_coordinates',
+          tabId,
+          completed: 0,
+        };
+      }
+      const points = pointsAround(x, y, gridSize, step);
+      console.log('[coordinate-click] resolved sweep center', {
+        tabId,
+        x,
+        y,
+        gridSize,
+        step,
+        count: points.length,
+      });
       for (const pt of points) {
         if (!(await isFocusedTab(tabId))) {
           return {
@@ -256,6 +273,22 @@ async function clickGrid(
             completed,
             total: points.length,
           };
+        }
+        if (completed === 0) {
+          await chrome.storage.local
+            .set({
+              lastSweep: {
+                ...source,
+                tabId,
+                center: { x, y },
+                firstPoint: pt,
+                version: chrome.runtime.getManifest().version,
+                startedAt: Date.now(),
+              },
+            })
+            .catch((error) =>
+              console.warn('[coordinate-click] could not record sweep', error),
+            );
         }
         const move = { type: 'mouseMoved', x: pt.x, y: pt.y };
         const press = {
@@ -393,7 +426,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
                 const source = ${JSON.stringify(rule.expression)};
                 let evaluate;
                 try {
-                  evaluate = new Function('return (\\n' + source + '\\n);');
+                  evaluate = new Function(${JSON.stringify('return (\n')} + source + ${JSON.stringify('\n);')});
                 } catch (error) {
                   if (!(error instanceof SyntaxError)) throw error;
                   evaluate = new Function(source);
@@ -439,6 +472,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
         0,
         rule.visualize,
         shouldContinue,
+        { type: 'expression', ruleId: rule.id },
       );
       if (
         result.stopped &&
@@ -519,6 +553,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
         0,
         rule.visualize,
         shouldContinue,
+        { type: 'text', ruleId: rule.id },
       )
         .then((result) => {
           if (

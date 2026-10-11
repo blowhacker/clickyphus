@@ -37,8 +37,11 @@
       }
     }
 
-    summary.append(title);
+    const kind = document.createElement('span');
+    kind.className = 'rule-kind';
+    summary.append(title, kind);
     while (rule.firstChild) editor.append(rule.firstChild);
+    editor.append(editor.querySelector('.bar'));
     details.append(summary, editor);
     rule.append(details);
 
@@ -47,15 +50,23 @@
         rule.querySelector(`[name="${name}"]`)?.value?.trim() || '';
       const urlMatch = get('urlMatch');
       const url = !urlMatch || urlMatch === '*' ? 'All URLs' : urlMatch;
-      const phrase =
-        get('ruleType') === 'expression'
-          ? `JS: ${get('expression') || '(set expression)'}`
-          : get('textMatch') || '(set text)';
+      const expression = get('ruleType') === 'expression';
+      const phrase = expression
+        ? 'Computed or saved center'
+        : get('textMatch') || 'Add matching text';
+      kind.textContent = !checkbox.checked ? 'OFF' : expression ? 'JS' : 'TEXT';
       const size = get('gridSize') || '?';
       const x = get('x') || '?';
       const y = get('y') || '?';
       heading.textContent = url;
-      meta.textContent = `${phrase} · ${size}×${size} at ${x}, ${y}`;
+      const pattern = size === '1' ? 'Single click' : `${size}×${size}`;
+      meta.textContent = expression
+        ? `${phrase} · ${pattern}`
+        : `${phrase} · ${pattern} at ${x}, ${y}`;
+      checkbox.setAttribute(
+        'aria-label',
+        `Enable ${expression ? 'JavaScript' : 'text'} rule for ${url}`,
+      );
       rule.dataset.enabled = String(checkbox.checked);
       title.title = title.textContent;
     };

@@ -29,6 +29,10 @@ flowchart TD
     Debugger -->|Evaluate expressions, show markers, dispatch mouse input| Page[Target page]
 ```
 
+## Popup editing
+
+The popup shows only the selected condition type and preserves the other type's input when switching. JavaScript coordinate fields are labeled as fallbacks. Single-click patterns hide the unused grid controls. A shared sticky save bar applies the complete rule list, with an unsaved-state indicator, inline validation, and undo for the most recent removal before saving. Removal is staged in the editor until saved. The `[hidden]` CSS rule explicitly takes precedence over component display styles.
+
 ## Automatic rules
 
 Every rule includes an enabled flag, URL substring, condition, viewport coordinates, grid size, spacing, click delay, and marker preference. URL matching is case insensitive and uses the top-level tab URL. A blank URL filter (including whitespace) or `*` matches all supported pages; other values are literal substrings, not wildcard patterns. Rules without a `ruleType` retain the original text behavior.
@@ -65,6 +69,8 @@ The fired set and job queues are service-worker memory, rather than durable stor
 
 Manual requests and automatic rules share `clickGrid`. Jobs run serially within each tab. Manual requests are acknowledged immediately, then wait 600 ms to let the popup close before execution.
 
+The manual test panel sends its own X / Y fields; it does not evaluate automatic rules. For automatic expression rules, the worker resolves the returned coordinates before generating the grid and logs the resolved center. A `true` result uses saved rule coordinates, while a valid coordinate object overrides both axes.
+
 The worker validates the click settings, builds a square grid around the requested point, rounds coordinates to CSS pixels, and skips negative coordinates. Points are sorted by distance from the requested center. A grid size of one produces a single click.
 
 For each point, the worker checks focus and any automatic condition, optionally draws a marker, and sends mouse move, press, and release commands using `Input.dispatchMouseEvent`. This sends browser input rather than calling an element's DOM `click()` method. Coordinates are relative to the top-level viewport, allowing clicks over nested frames without resolving a target element.
@@ -81,13 +87,14 @@ The worker verifies the tab and draft target, updates the matching draft, and at
 
 ## State and browser boundaries
 
-| State                                       | Location              | Purpose                                                                      |
-| ------------------------------------------- | --------------------- | ---------------------------------------------------------------------------- |
-| `autoRules`                                 | Chrome local storage  | Saved rule configuration shared by popup, watcher, and worker.               |
-| `autoRule`                                  | Chrome local storage  | Legacy single-rule data read by the popup and watcher.                       |
-| `manualDraft`, `rulesDraft`, `pickerTarget` | Chrome local storage  | Preserve editing and selection state across popup closure.                   |
-| Job queues, fired rule IDs, picking tabs    | Worker memory         | Coordinate execution and prevent repeated work during the worker's lifetime. |
-| Loaded rules and reported phrases           | Content-script memory | Scan each frame and suppress duplicate text notifications.                   |
+| State                                       | Location              | Purpose                                                                                                      |
+| ------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `autoRules`                                 | Chrome local storage  | Saved rule configuration shared by popup, watcher, and worker.                                               |
+| `autoRule`                                  | Chrome local storage  | Legacy single-rule data read by the popup and watcher.                                                       |
+| `lastSweep`                                 | Chrome local storage  | Last execution source, rule ID, resolved center, first click, version, and start time for popup diagnostics. |
+| `manualDraft`, `rulesDraft`, `pickerTarget` | Chrome local storage  | Preserve editing and selection state across popup closure.                                                   |
+| Job queues, fired rule IDs, picking tabs    | Worker memory         | Coordinate execution and prevent repeated work during the worker's lifetime.                                 |
+| Loaded rules and reported phrases           | Content-script memory | Scan each frame and suppress duplicate text notifications.                                                   |
 
 Content scripts run in Chrome's isolated extension context. User expressions run separately in the page context through the debugger API; the popup does not evaluate them. Text notifications carry the matching phrase rather than the page's full text.
 

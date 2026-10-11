@@ -8,6 +8,9 @@
       * {
         box-sizing: border-box;
       }
+      [hidden] {
+        display: none !important;
+      }
       :root {
         color-scheme: dark;
         --bg: #101316;
@@ -26,7 +29,7 @@
       body {
         width: 400px;
         margin: 0;
-        padding: 22px 20px 18px;
+        padding: 16px 16px 12px;
         max-height: 590px;
         overflow-y: auto;
       }
@@ -34,13 +37,13 @@
         display: flex;
         gap: 12px;
         align-items: center;
-        padding-bottom: 20px;
-        margin-bottom: 20px;
+        padding-bottom: 12px;
+        margin-bottom: 14px;
         border-bottom: 1px solid var(--line);
       }
       .brand-icon {
-        width: 40px;
-        height: 40px;
+        width: 34px;
+        height: 34px;
         flex: none;
         display: grid;
         place-items: center;
@@ -57,7 +60,7 @@
         margin-bottom: 3px;
       }
       h1 {
-        font-size: 21px;
+        font-size: 19px;
         font-weight: 650;
         letter-spacing: -0.8px;
         margin: 0;
@@ -184,7 +187,7 @@
         gap: 6px;
         font: 10px var(--mono);
         color: #a6b8b0;
-        margin: 0 0 12px;
+        margin: 10px 0 6px;
       }
       .scope::before {
         content: '';
@@ -353,6 +356,103 @@
         letter-spacing: 0.7px;
         color: #819099;
       }
+      textarea {
+        min-height: 150px;
+        resize: vertical;
+        tab-size: 2;
+        line-height: 1.6;
+      }
+      .field-help {
+        display: block;
+        margin-top: 6px;
+        line-height: 1.5;
+      }
+      .section-label {
+        margin: 20px 0 8px;
+        padding-top: 14px;
+        border-top: 1px solid var(--line);
+        font: 10px var(--mono);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: var(--accent);
+      }
+      .rule-editor > .section-label:first-of-type {
+        margin-top: 2px;
+        padding-top: 0;
+        border: 0;
+      }
+      .code-help {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px 12px;
+        margin: 8px 0 12px;
+      }
+      .code-help span {
+        font-size: 10px;
+        color: var(--muted);
+      }
+      code {
+        color: var(--accent);
+        font-family: var(--mono);
+      }
+      .grid-summary {
+        display: block;
+        margin: 7px 0;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .field-error {
+        margin: 4px 0;
+        color: #ffb2bd;
+        font-size: 11px;
+      }
+      [aria-invalid='true'] {
+        border-color: #f394a5 !important;
+      }
+      .save-bar {
+        position: sticky;
+        bottom: 0;
+        z-index: 2;
+        background: var(--bg);
+        border-top: 1px solid var(--line);
+        margin-top: 14px;
+        padding: 10px 0 0;
+      }
+      .save-bar .primary {
+        width: auto;
+        margin: 0;
+        min-width: 128px;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      #save-state {
+        color: var(--muted);
+        font-size: 11px;
+      }
+      #save-state[data-dirty='true'] {
+        color: #f3d593;
+      }
+      .rule-kind {
+        color: var(--accent);
+        font: 9px var(--mono);
+        white-space: nowrap;
+      }
+      .rule[data-enabled='false'] .rule-kind {
+        color: var(--muted);
+      }
+      .run-history {
+        margin-top: 16px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .run-history summary {
+        cursor: pointer;
+      }
+      .footer {
+        margin-bottom: 10px;
+      }
       @media (prefers-reduced-motion: reduce) {
         * {
           transition: none !important;
@@ -378,50 +478,60 @@
         </svg>
       </div>
       <div>
-        <div class="eyebrow">Click automation</div>
         <h1>Coordinate Click</h1>
-        <p class="hint">Your clicks, on cue.</p>
       </div>
     </header>
     <div class="bar">
       <h2>Automatic rules</h2>
       <button id="add" type="button">+ Add rule</button>
     </div>
-    <p class="hint">
-      Match a URL and page text or JavaScript expression to run clicks.
-    </p>
     <div class="scope">Active tab only · once per page load</div>
     <div id="rules"></div>
     <div class="empty">
       <strong>No rules yet</strong>Add a rule to automate clicks on a matching
       page.
     </div>
-    <p id="status" role="status" aria-live="polite"></p>
+    <div id="undo-row" class="bar" hidden>
+      <span class="hint">Rule removed. Save to apply.</span
+      ><button id="undo-remove" type="button">Undo</button>
+    </div>
+    <details class="run-history" hidden>
+      <summary>Last click</summary>
+      <p id="last-sweep" class="hint"></p>
+    </details>
     <details class="panel">
-      <summary>Test a click or grid sweep</summary>
-      <p class="hint">Runs on the active tab. X and Y are viewport pixels.</p>
+      <summary>Manual click test</summary>
+      <p class="hint">
+        Uses the manual X / Y fields below, without evaluating automatic rules.
+        X and Y are viewport pixels.
+      </p>
       <form id="manual">
         <button id="pick-position" type="button">⌖ Pick on page</button>
         <p class="hint">Click a point to fill X / Y. Escape cancels.</p>
         <div class="line">
           <label
-            >X position<input
+            >X center<input
               name="x"
               type="number"
               min="0"
+              step="any"
               value="295"
               required /></label
           ><label
-            >Y position<input
+            >Y center<input
               name="y"
               type="number"
               min="0"
+              step="any"
               value="355"
               required
           /></label>
         </div>
-        <label>Grid size<select name="gridSize" class="sizes"></select></label>
-        <div class="line">
+        <label
+          >Click pattern<select name="gridSize" class="sizes"></select
+        ></label>
+        <output class="grid-summary"></output>
+        <div class="line grid-options">
           <label
             >Spacing (px)<input
               name="step"
@@ -431,10 +541,10 @@
               value="10"
               required /></label
           ><label
-            >Delay (ms)<input
+            >Pause between clicks (ms)<input
               name="intervalMs"
               type="number"
-              min="80"
+              min="0"
               max="5000"
               value="180"
               required
@@ -444,7 +554,7 @@
           ><input type="checkbox" name="visualize" checked /> Show click
           markers</label
         >
-        <button class="primary" type="submit">Run on active tab</button>
+        <button class="primary" type="submit">Run manual click</button>
       </form>
     </details>
     <template id="rule-template">
@@ -453,12 +563,16 @@
           <label><input name="enabled" type="checkbox" checked /> Enabled</label
           ><button type="button" class="remove">Remove</button>
         </div>
+        <h3 class="section-label">When to click</h3>
         <label
           >URL contains (optional)<input
             name="urlMatch"
             type="text"
-            placeholder="Blank or * for all URLs"
-        /></label>
+            placeholder="example.com/path"
+          /><span class="hint field-help"
+            >Leave blank or use * for all websites.</span
+          ></label
+        >
         <label
           >Rule type<select name="ruleType">
             <option value="text">Page text</option>
@@ -468,37 +582,56 @@
         <label class="expression-field" hidden
           >JavaScript expression<textarea
             name="expression"
-            rows="4"
+            rows="6"
+            spellcheck="false"
+            autocapitalize="off"
+            autocomplete="off"
             placeholder="document.querySelector('button.ready') !== null"
-          ></textarea
-          ><span class="hint"
-            >Runs in the top-level page. Return true for saved coordinates, { x,
-            y } for a computed grid center, or false to skip. Expressions and
-            code with return are supported; checked repeatedly and before each
-            click.</span
-          ></label
-        >
+          ></textarea>
+        </label>
+        <div class="code-help" data-js-only hidden>
+          <span><code>true</code> → saved center</span>
+          <span><code>{ x, y }</code> → computed center</span>
+          <span><code>false</code> → skip</span>
+          <span
+            >Expressions or code with return. Runs in the top-level page;
+            rechecked before clicks.</span
+          >
+        </div>
         <label class="text-field"
           >Page text contains<input
             name="textMatch"
             type="text"
             placeholder="Ready to continue"
-            value="Performing security verification"
         /></label>
+        <h3 class="section-label position-heading">Click center</h3>
+        <p class="hint position-help">
+          Viewport coordinates. The grid starts at the center and expands
+          outward.
+        </p>
         <button class="pick-rule" type="button">⌖ Pick on page</button>
         <div class="line">
           <label
-            >X position<input
+            >X center<input
               name="x"
               type="number"
               min="0"
+              step="any"
               value="313" /></label
           ><label
-            >Y position<input name="y" type="number" min="0" value="350"
+            >Y center<input
+              name="y"
+              type="number"
+              min="0"
+              step="any"
+              value="350"
           /></label>
         </div>
-        <label>Grid size<select name="gridSize" class="sizes"></select></label>
-        <div class="line">
+        <label
+          >Click pattern<select name="gridSize" class="sizes"></select
+        ></label>
+        <output class="grid-summary"></output>
+        <div class="line grid-options">
           <label
             >Spacing (px)<input
               name="step"
@@ -507,10 +640,10 @@
               max="100"
               value="10" /></label
           ><label
-            >Delay (ms)<input
+            >Pause between clicks (ms)<input
               name="intervalMs"
               type="number"
-              min="80"
+              min="0"
               max="5000"
               value="180"
           /></label>
@@ -519,10 +652,18 @@
           ><input name="visualize" type="checkbox" checked /> Show
           markers</label
         >
-        <button type="button" class="save primary">Save rules</button>
       </section>
     </template>
-    <p class="footer">URL + CONDITION → CLICK</p>
+    <p class="footer">Coordinate Click</p>
+    <div class="save-bar">
+      <div class="bar">
+        <span id="save-state" role="status">All changes saved</span
+        ><button id="save-rules" type="button" class="save primary" disabled>
+          Save changes
+        </button>
+      </div>
+      <p id="status" role="status" aria-live="polite"></p>
+    </div>
     <script src="popup.js"></script>
     <script src="popup-layout.js"></script>
   </body>

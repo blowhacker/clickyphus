@@ -2,6 +2,7 @@
   "name": "coordinate-click-companion",
   "private": true,
   "scripts": {
+    "test": "node --test tests/*.test.cjs",
     "lint": "eslint extension eslint.config.mjs",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
