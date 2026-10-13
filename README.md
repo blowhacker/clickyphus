@@ -19,7 +19,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the components, rule evaluation, clic
 
 ## Development
 
-Requires Chrome 138 or newer. Load `extension/` via **chrome://extensions → Developer mode → Load unpacked**.
+Tested on Chrome 138. Load `extension/` via **chrome://extensions → Developer mode → Load unpacked**.
 After changes, reload the extension and refresh open pages.
 
 ```sh
